@@ -29,6 +29,14 @@ const Index: React.FC = () => {
     ));
   };
 
+  const handleAddTask = (taskData: Omit<Task, 'id'>) => {
+    const newTask: Task = {
+      ...taskData,
+      id: Date.now().toString(),
+    };
+    setTasks([...tasks, newTask]);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/10 selection:text-primary">
       <div className="max-w-4xl mx-auto flex flex-col min-h-screen relative">
@@ -40,6 +48,7 @@ const Index: React.FC = () => {
               tasks={tasks} 
               onTaskClick={handleTaskClick} 
               onAutoFix={handleAutoFix}
+              onAddTask={handleAddTask}
             />
           )}
           {view === 'ai' && <AIWorkspace />}

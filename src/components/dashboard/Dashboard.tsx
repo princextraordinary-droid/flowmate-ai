@@ -1,16 +1,18 @@
 import React from 'react';
-import { Plus, Zap } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { QUADRANTS } from '@/data/constants';
 import { Task } from '@/types/task';
 import QuadrantCard from './QuadrantCard';
+import AddTaskDialog from './AddTaskDialog';
 
 interface DashboardProps {
   tasks: Task[];
   onTaskClick: (task: Task) => void;
   onAutoFix: () => void;
+  onAddTask: (task: Omit<Task, 'id'>) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix }) => {
+const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix, onAddTask }) => {
   const hasMissedTasks = tasks.some(t => t.status === 'missed');
 
   return (
@@ -31,9 +33,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix }) 
               <Zap size={14} /> Auto-Fix
             </button>
           )}
-          <button className="bg-card border border-border p-2.5 rounded-pill text-muted-foreground shadow-soft hover:shadow-md transition-all">
-            <Plus size={20} />
-          </button>
+          <AddTaskDialog onAddTask={onAddTask} />
         </div>
       </div>
 
