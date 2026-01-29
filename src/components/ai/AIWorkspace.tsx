@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
-import { Sparkles, Mic, Image as ImageIcon, Send, Layers, CheckCircle2, FileCode } from 'lucide-react';
+import { Sparkles, Mic, Image as ImageIcon, Send, Layers, CheckCircle2, FileCode, Settings } from 'lucide-react';
 import { AIResult } from '@/types/task';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import ApiKeySetup from './ApiKeySetup';
+import UsageIndicator from './UsageIndicator';
 
 type FileType = 'text' | 'pdf' | 'image' | 'html';
 
@@ -11,53 +16,132 @@ const AIWorkspace: React.FC = () => {
   const [aiResult, setAiResult] = useState<AIResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStep, setGenStep] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  
+  const { settings, usage, loading, hasApiKey, saveApiKey, refreshUsage } = useUserSettings();
+  const { toast } = useToast();
 
-  const handleSimulateMultimodalAI = async () => {
+  const handleAIRequest = async () => {
+    if (!aiInput.trim()) return;
+    
+    if (!hasApiKey) {
+      setShowSettings(true);
+      toast({ 
+        title: "API Key Required", 
+        description: "Please add your Gemini API key first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (usage.remaining <= 0) {
+      toast({ 
+        title: "Daily Limit Reached", 
+        description: "Your free requests reset at midnight UTC",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setAiResult(null);
-    
-    setGenStep(`Extracting data from ${fileType.toUpperCase()}...`);
-    await new Promise(r => setTimeout(r, 800));
+    setGenStep('Connecting to Gemini AI...');
 
-    setGenStep("Applying Instruction Overlay...");
-    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Error", description: "Please log in to use AI features", variant: "destructive" });
+        setIsGenerating(false);
+        return;
+      }
 
-    const isDiagramRequested = overlayPrompt.toLowerCase().includes('diagram') || 
-                               overlayPrompt.toLowerCase().includes('chart') || 
-                               overlayPrompt.toLowerCase().includes('cycle');
-    const isImageRequested = overlayPrompt.toLowerCase().includes('picture') || 
-                             overlayPrompt.toLowerCase().includes('image') || 
-                             overlayPrompt.toLowerCase().includes('illustration');
+      setGenStep(`Processing ${fileType.toUpperCase()} content...`);
 
-    const result: AIResult = {
-      summary: `The provided ${fileType} contains details about systematic processes. Based on your instruction "${overlayPrompt || 'General Summary'}", here is the breakdown.`,
-      keyPoints: ["Fundamental core concepts", "Process sequence", "Variable outcomes"],
-      actionItems: ["Review specific methodology", "Test application of theory"],
-    };
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            prompt: aiInput,
+            fileType,
+            overlayPrompt
+          })
+        }
+      );
 
-    if (isDiagramRequested) {
-      setGenStep("Architecting Mermaid.js Diagram...");
-      await new Promise(r => setTimeout(r, 1200));
-      result.mermaid = `graph TD\nA[Start] --> B(Process Data)\nB --> C{Decision}\nC -->|Yes| D[Result A]\nC -->|No| E[Result B]`;
-    }
+      const data = await response.json();
 
-    if (isImageRequested) {
-      setGenStep("Generating AI Illustration...");
-      await new Promise(r => setTimeout(r, 1500));
-      result.imagePlaceholder = {
-        title: "AI Generated Concept Art",
-        prompt: overlayPrompt,
-        style: "Educational / 3D Render"
+      if (!response.ok) {
+        if (data.error === 'NO_API_KEY') {
+          setShowSettings(true);
+          toast({ title: "API Key Missing", description: data.message, variant: "destructive" });
+        } else if (data.error === 'INVALID_API_KEY') {
+          setShowSettings(true);
+          toast({ title: "Invalid API Key", description: "Please check your Gemini API key", variant: "destructive" });
+        } else {
+          toast({ title: "Error", description: data.message || "AI request failed", variant: "destructive" });
+        }
+        setIsGenerating(false);
+        return;
+      }
+
+      setGenStep('Generating response...');
+      
+      const result: AIResult = {
+        summary: data.summary,
+        keyPoints: data.keyPoints,
+        actionItems: data.actionItems,
+        mermaid: data.mermaid,
+        imagePlaceholder: data.imagePlaceholder
       };
-    }
 
-    setAiResult(result);
-    setIsGenerating(false);
-    setGenStep('');
+      setAiResult(result);
+      await refreshUsage();
+      
+    } catch (error) {
+      console.error('AI request error:', error);
+      toast({ title: "Error", description: "Failed to connect to AI service", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+      setGenStep('');
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto flex items-center justify-center py-12">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-28">
+      {/* Usage & Settings */}
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <UsageIndicator {...usage} />
+        </div>
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className={`px-4 rounded-pill-sm border flex items-center gap-2 transition ${
+            showSettings ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border/50 hover:border-primary/50'
+          }`}
+        >
+          <Settings size={16} />
+          <span className="text-sm font-medium">API Key</span>
+        </button>
+      </div>
+
+      {/* API Key Setup */}
+      {showSettings && (
+        <ApiKeySetup onSave={saveApiKey} hasExistingKey={hasApiKey} />
+      )}
+
       {/* Input Card */}
       <div className="bg-card p-6 rounded-pill shadow-elevated border border-border/50">
         <div className="flex justify-between items-start mb-4">
@@ -106,9 +190,10 @@ const AIWorkspace: React.FC = () => {
               onChange={(e) => setOverlayPrompt(e.target.value)}
             />
             <button 
-              onClick={handleSimulateMultimodalAI}
-              disabled={!aiInput || isGenerating}
+              onClick={handleAIRequest}
+              disabled={!aiInput || isGenerating || !hasApiKey || usage.remaining <= 0}
               className="bg-primary text-primary-foreground w-12 h-12 rounded-pill-sm flex items-center justify-center hover:opacity-90 disabled:opacity-30 shadow-glow transition-all"
+              title={!hasApiKey ? "Add your API key first" : usage.remaining <= 0 ? "Daily limit reached" : "Send"}
             >
               <Send size={18} />
             </button>

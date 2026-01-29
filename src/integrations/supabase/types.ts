@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_usage: {
+        Row: {
+          created_at: string
+          id: string
+          request_count: number
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          request_count?: number
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          request_count?: number
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_syncs: {
         Row: {
           created_at: string
@@ -102,6 +126,30 @@ export type Database = {
           quadrant?: string
           status?: string
           title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          gemini_api_key: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gemini_api_key?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gemini_api_key?: string | null
+          id?: string
           updated_at?: string
           user_id?: string
         }
