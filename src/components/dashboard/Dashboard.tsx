@@ -1,19 +1,33 @@
 import React from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, Loader2 } from 'lucide-react';
 import { QUADRANTS } from '@/data/constants';
 import { Task } from '@/types/task';
+import { useTasks } from '@/hooks/useTasks';
 import QuadrantCard from './QuadrantCard';
 import AddTaskDialog from './AddTaskDialog';
 
 interface DashboardProps {
-  tasks: Task[];
   onTaskClick: (task: Task) => void;
-  onAutoFix: () => void;
-  onAddTask: (task: Omit<Task, 'id'>) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix, onAddTask }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
+  const { 
+    tasks, 
+    loading, 
+    addTask, 
+    toggleTaskComplete, 
+    autoFixMissedTasks 
+  } = useTasks();
+
   const hasMissedTasks = tasks.some(t => t.status === 'missed');
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-24">
@@ -27,13 +41,13 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix, on
         <div className="flex gap-2">
           {hasMissedTasks && (
             <button
-              onClick={onAutoFix}
+              onClick={autoFixMissedTasks}
               className="bg-primary text-primary-foreground px-4 py-2 rounded-pill text-xs font-bold flex items-center gap-2 hover:opacity-90 shadow-glow transition-all"
             >
               <Zap size={14} /> Auto-Fix
             </button>
           )}
-          <AddTaskDialog onAddTask={onAddTask} />
+          <AddTaskDialog onAddTask={addTask} />
         </div>
       </div>
 
@@ -44,6 +58,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, onTaskClick, onAutoFix, on
             quadrant={quadrant}
             tasks={tasks}
             onTaskClick={onTaskClick}
+            onToggleComplete={toggleTaskComplete}
           />
         ))}
       </div>

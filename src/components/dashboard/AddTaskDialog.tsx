@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import { Task, QuadrantId } from '@/types/task';
 import { QUADRANTS } from '@/data/constants';
 
 interface AddTaskDialogProps {
-  onAddTask: (task: Omit<Task, 'id'>) => void;
+  onAddTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
 }
 
 const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ onAddTask }) => {
@@ -31,28 +31,34 @@ const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ onAddTask }) => {
   const [energy, setEnergy] = useState(3);
   const [duration, setDuration] = useState(30);
   const [due, setDue] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!title.trim() || !due.trim()) return;
 
-    onAddTask({
-      title: title.trim(),
-      quadrant,
-      energy,
-      duration,
-      status: 'pending',
-      due: due.trim(),
-    });
+    setIsSubmitting(true);
+    try {
+      await onAddTask({
+        title: title.trim(),
+        quadrant,
+        energy,
+        duration,
+        status: 'pending',
+        due: due.trim(),
+      });
 
-    // Reset form
-    setTitle('');
-    setQuadrant('Q1_DO');
-    setEnergy(3);
-    setDuration(30);
-    setDue('');
-    setOpen(false);
+      // Reset form
+      setTitle('');
+      setQuadrant('Q1_DO');
+      setEnergy(3);
+      setDuration(30);
+      setDue('');
+      setOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -139,7 +145,10 @@ const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ onAddTask }) => {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Add Task</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 animate-spin" size={16} />}
+              Add Task
+            </Button>
           </div>
         </form>
       </DialogContent>

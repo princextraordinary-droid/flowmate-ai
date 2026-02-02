@@ -8,11 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-interface HeaderProps {
-  energyLevel: number;
-}
-
-const Header: React.FC<HeaderProps> = ({ energyLevel }) => {
+const Header: React.FC = () => {
   const { user, signOut } = useAuth();
 
   return (
@@ -33,7 +29,7 @@ const Header: React.FC<HeaderProps> = ({ energyLevel }) => {
               <div 
                 key={i} 
                 className={`h-1.5 w-4 rounded-full transition-colors ${
-                  i < energyLevel ? 'bg-primary' : 'bg-border'
+                  i < 3 ? 'bg-primary' : 'bg-border'
                 }`}
               />
             ))}

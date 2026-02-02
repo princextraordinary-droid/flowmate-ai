@@ -1,7 +1,7 @@
 import React from 'react';
-import { Layout, Brain, Clock, Zap } from 'lucide-react';
+import { Layout, Brain, Clock, Zap, FileText } from 'lucide-react';
 
-type View = 'dashboard' | 'ai' | 'focus' | 'checkin';
+type View = 'dashboard' | 'ai' | 'focus' | 'checkin' | 'notes';
 
 interface BottomNavProps {
   currentView: View;
@@ -11,6 +11,7 @@ interface BottomNavProps {
 const navItems: { id: View; icon: React.ElementType; label: string }[] = [
   { id: 'dashboard', icon: Layout, label: 'Dashboard' },
   { id: 'ai', icon: Brain, label: 'AI' },
+  { id: 'notes', icon: FileText, label: 'Notes' },
   { id: 'focus', icon: Clock, label: 'Focus' },
   { id: 'checkin', icon: Zap, label: 'Check-in' },
 ];
