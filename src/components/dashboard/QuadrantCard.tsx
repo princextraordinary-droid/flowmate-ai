@@ -6,9 +6,10 @@ interface QuadrantCardProps {
   quadrant: Quadrant;
   tasks: Task[];
   onTaskClick: (task: Task) => void;
+  onToggleComplete: (taskId: string) => void;
 }
 
-const QuadrantCard: React.FC<QuadrantCardProps> = ({ quadrant, tasks, onTaskClick }) => {
+const QuadrantCard: React.FC<QuadrantCardProps> = ({ quadrant, tasks, onTaskClick, onToggleComplete }) => {
   const filteredTasks = tasks.filter(t => t.quadrant === quadrant.id);
 
   return (
@@ -18,13 +19,17 @@ const QuadrantCard: React.FC<QuadrantCardProps> = ({ quadrant, tasks, onTaskClic
         <h3 className={`font-bold uppercase text-[10px] tracking-widest ${quadrant.colorClass} opacity-80`}>
           {quadrant.title}
         </h3>
+        <span className="ml-auto bg-background/50 px-2 py-0.5 rounded-full text-[10px] font-bold text-muted-foreground">
+          {filteredTasks.length}
+        </span>
       </div>
       <div className="space-y-2">
         {filteredTasks.map(task => (
           <TaskCard 
             key={task.id} 
             task={task} 
-            onClick={() => onTaskClick(task)} 
+            onClick={() => onTaskClick(task)}
+            onToggleComplete={() => onToggleComplete(task.id)}
           />
         ))}
         {filteredTasks.length === 0 && (

@@ -1,11 +1,28 @@
-import React, { useState } from 'react';
-import { Sparkles, Mic, Image as ImageIcon, Send, Layers, CheckCircle2, FileCode, Settings } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { 
+  Sparkles, 
+  Mic, 
+  Image as ImageIcon, 
+  Send, 
+  Layers, 
+  CheckCircle2, 
+  FileCode, 
+  Settings,
+  FileText,
+  Globe,
+  X,
+  Loader2,
+  Wand2
+} from 'lucide-react';
 import { AIResult } from '@/types/task';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useKnowledgeItems, KnowledgeItem } from '@/hooks/useKnowledgeItems';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import ApiKeySetup from './ApiKeySetup';
 import UsageIndicator from './UsageIndicator';
+import AttachmentButtons from '@/components/knowledge/AttachmentButtons';
+import KnowledgeItemCard from '@/components/knowledge/KnowledgeItemCard';
 
 type FileType = 'text' | 'pdf' | 'image' | 'html';
 
@@ -17,12 +34,43 @@ const AIWorkspace: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStep, setGenStep] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
   
   const { settings, usage, loading, hasApiKey, saveApiKey, refreshUsage } = useUserSettings();
+  const { items, addItem, uploadFile, deleteItem } = useKnowledgeItems();
   const { toast } = useToast();
 
+  const handleItemSelect = (item: KnowledgeItem) => {
+    setSelectedItems(prev => 
+      prev.includes(item.id)
+        ? prev.filter(id => id !== item.id)
+        : [...prev, item.id]
+    );
+  };
+
+  const buildContext = (): string => {
+    const selectedKnowledge = items.filter(i => selectedItems.includes(i.id));
+    let context = '';
+
+    for (const item of selectedKnowledge) {
+      context += `\n\n--- ${item.item_type.toUpperCase()}: ${item.title || 'Untitled'} ---\n`;
+      
+      if (item.extracted_text) {
+        context += item.extracted_text;
+      } else if (item.content) {
+        context += item.content;
+      } else if (item.original_url) {
+        context += `URL: ${item.original_url}`;
+      } else if (item.file_url) {
+        context += `[File attached: ${item.title}]`;
+      }
+    }
+
+    return context;
+  };
+
   const handleAIRequest = async () => {
-    if (!aiInput.trim()) return;
+    if (!aiInput.trim() && selectedItems.length === 0) return;
     
     if (!hasApiKey) {
       setShowSettings(true);
@@ -45,7 +93,7 @@ const AIWorkspace: React.FC = () => {
 
     setIsGenerating(true);
     setAiResult(null);
-    setGenStep('Connecting to Gemini AI...');
+    setGenStep('Building context from selected items...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -55,7 +103,10 @@ const AIWorkspace: React.FC = () => {
         return;
       }
 
-      setGenStep(`Processing ${fileType.toUpperCase()} content...`);
+      const context = buildContext();
+      const fullPrompt = `${aiInput}\n\n${context}`;
+
+      setGenStep(`Processing with AI...`);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`,
@@ -66,7 +117,7 @@ const AIWorkspace: React.FC = () => {
             'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            prompt: aiInput,
+            prompt: fullPrompt,
             fileType,
             overlayPrompt
           })
@@ -114,7 +165,7 @@ const AIWorkspace: React.FC = () => {
   if (loading) {
     return (
       <div className="max-w-2xl mx-auto flex items-center justify-center py-12">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+        <Loader2 className="animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -142,11 +193,47 @@ const AIWorkspace: React.FC = () => {
         <ApiKeySetup onSave={saveApiKey} hasExistingKey={hasApiKey} />
       )}
 
+      {/* Knowledge Suite Items */}
+      {items.length > 0 && (
+        <div className="bg-card p-4 rounded-xl border border-border/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Layers size={16} className="text-primary" />
+              Knowledge Suite
+              {selectedItems.length > 0 && (
+                <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+                  {selectedItems.length} selected
+                </span>
+              )}
+            </h3>
+            {selectedItems.length > 0 && (
+              <button
+                onClick={() => setSelectedItems([])}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+            {items.map(item => (
+              <KnowledgeItemCard
+                key={item.id}
+                item={item}
+                onDelete={deleteItem}
+                onSelect={handleItemSelect}
+                isSelected={selectedItems.includes(item.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Input Card */}
       <div className="bg-card p-6 rounded-pill shadow-elevated border border-border/50">
         <div className="flex justify-between items-start mb-4">
           <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-            <Sparkles className="text-primary" size={24} /> Knowledge Suite
+            <Sparkles className="text-primary" size={24} /> AI Workspace
           </h2>
           <select 
             className="text-[10px] font-bold uppercase tracking-widest bg-secondary border-none rounded-full px-3 py-1.5 text-muted-foreground outline-none cursor-pointer"
@@ -160,42 +247,45 @@ const AIWorkspace: React.FC = () => {
           </select>
         </div>
 
+        {/* Attachment Buttons */}
+        <div className="mb-4">
+          <AttachmentButtons
+            onAddItem={addItem}
+            onUploadFile={uploadFile}
+            disabled={isGenerating}
+          />
+        </div>
+
         <div className="relative">
           <textarea 
-            className="w-full h-40 p-5 bg-secondary/50 border-none rounded-pill-sm focus:ring-2 focus:ring-primary/20 outline-none transition text-foreground placeholder:text-muted-foreground/50 placeholder:italic resize-none"
-            placeholder={`Paste ${fileType} content here...`}
+            className="w-full h-32 p-5 bg-secondary/50 border-none rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition text-foreground placeholder:text-muted-foreground/50 placeholder:italic resize-none"
+            placeholder="Enter your content or select items from Knowledge Suite above..."
             value={aiInput}
             onChange={(e) => setAiInput(e.target.value)}
           />
-          <div className="absolute bottom-4 right-4 flex gap-2">
-            <button className="p-2 bg-card rounded-full shadow-soft text-muted-foreground hover:text-primary transition">
-              <Mic size={18}/>
-            </button>
-            <button className="p-2 bg-card rounded-full shadow-soft text-muted-foreground hover:text-primary transition">
-              <ImageIcon size={18}/>
-            </button>
-          </div>
         </div>
         
-        <div className="mt-4 p-4 bg-primary/5 rounded-pill-sm border border-primary/10">
-          <label className="text-[10px] font-black text-primary/70 uppercase mb-2 block tracking-widest">
+        {/* Instruction Overlay */}
+        <div className="mt-4 p-4 bg-primary/5 rounded-xl border border-primary/10">
+          <label className="text-[10px] font-black text-primary/70 uppercase mb-2 block tracking-widest flex items-center gap-2">
+            <Wand2 size={12} />
             Instruction Overlay
           </label>
           <div className="flex gap-2">
             <input 
               type="text"
-              placeholder="e.g. 'Generate a flow diagram' or 'Explain like I'm 5'"
-              className="flex-1 bg-card/80 border-none p-3 rounded-pill-sm text-sm outline-none placeholder:text-muted-foreground/50"
+              placeholder="e.g. 'Summarize this PDF' or 'Create a study guide from selected items'"
+              className="flex-1 bg-card/80 border-none p-3 rounded-lg text-sm outline-none placeholder:text-muted-foreground/50"
               value={overlayPrompt}
               onChange={(e) => setOverlayPrompt(e.target.value)}
             />
             <button 
               onClick={handleAIRequest}
-              disabled={!aiInput || isGenerating || !hasApiKey || usage.remaining <= 0}
-              className="bg-primary text-primary-foreground w-12 h-12 rounded-pill-sm flex items-center justify-center hover:opacity-90 disabled:opacity-30 shadow-glow transition-all"
-              title={!hasApiKey ? "Add your API key first" : usage.remaining <= 0 ? "Daily limit reached" : "Send"}
+              disabled={(!aiInput && selectedItems.length === 0) || isGenerating || !hasApiKey || usage.remaining <= 0}
+              className="bg-primary text-primary-foreground w-12 h-12 rounded-xl flex items-center justify-center hover:opacity-90 disabled:opacity-30 shadow-glow transition-all"
+              title={!hasApiKey ? "Add your API key first" : usage.remaining <= 0 ? "Daily limit reached" : "Process with AI"}
             >
-              <Send size={18} />
+              {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
             </button>
           </div>
         </div>
@@ -217,7 +307,7 @@ const AIWorkspace: React.FC = () => {
         <div className="space-y-4 animate-slide-up">
           {/* Main Content */}
           <div className="bg-card p-7 rounded-pill shadow-elevated border border-border/50">
-            <h3 className="text-lg font-black text-foreground mb-3">Augmented Summary</h3>
+            <h3 className="text-lg font-black text-foreground mb-3">AI Response</h3>
             <p className="text-sm text-muted-foreground leading-relaxed mb-6">{aiResult.summary}</p>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -227,7 +317,7 @@ const AIWorkspace: React.FC = () => {
                 </h4>
                 <ul className="space-y-2">
                   {aiResult.keyPoints.map((p, i) => (
-                    <li key={i} className="text-xs font-bold text-foreground bg-secondary/50 p-2.5 rounded-pill-sm flex items-center gap-2">
+                    <li key={i} className="text-xs font-bold text-foreground bg-secondary/50 p-2.5 rounded-lg flex items-center gap-2">
                       <div className="w-1.5 h-1.5 bg-primary rounded-full"></div> {p}
                     </li>
                   ))}
@@ -239,7 +329,7 @@ const AIWorkspace: React.FC = () => {
                 </h4>
                 <ul className="space-y-2">
                   {aiResult.actionItems.map((p, i) => (
-                    <li key={i} className="text-xs font-bold text-foreground bg-green-50 p-2.5 rounded-pill-sm border border-green-100">
+                    <li key={i} className="text-xs font-bold text-foreground bg-green-50 dark:bg-green-950/20 p-2.5 rounded-lg border border-green-100 dark:border-green-900">
                       ✅ {p}
                     </li>
                   ))}
@@ -250,34 +340,25 @@ const AIWorkspace: React.FC = () => {
 
           {/* Diagram Render */}
           {aiResult.mermaid && (
-            <div className="bg-foreground p-8 rounded-pill shadow-elevated overflow-hidden relative group">
+            <div className="bg-foreground p-8 rounded-xl shadow-elevated overflow-hidden relative group">
               <div className="absolute top-4 left-6 flex items-center gap-2">
                 <FileCode className="text-primary" size={16} />
-                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Mermaid Visualizer</span>
+                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Mermaid Diagram</span>
               </div>
               <div className="mt-8 flex flex-col items-center">
-                <div className="w-full max-w-xs space-y-4">
-                  <div className="h-10 w-24 bg-primary/20 border border-primary/50 rounded-xl flex items-center justify-center text-[10px] text-card font-bold mx-auto">START</div>
-                  <div className="w-px h-8 bg-primary/30 mx-auto"></div>
-                  <div className="h-14 w-48 bg-card/5 border border-card/10 rounded-pill-sm flex items-center justify-center text-[10px] text-primary-foreground/80 font-bold mx-auto px-4 text-center">ANALYZE CONTENT</div>
-                  <div className="w-px h-8 bg-primary/30 mx-auto"></div>
-                  <div className="w-20 h-20 bg-primary/10 border border-primary/50 rotate-45 mx-auto flex items-center justify-center">
-                    <span className="-rotate-45 text-[10px] text-card font-black">VALID?</span>
-                  </div>
-                </div>
+                <pre className="text-xs text-card bg-card/5 p-4 rounded-lg overflow-auto max-w-full">
+                  {aiResult.mermaid}
+                </pre>
               </div>
-              <button className="absolute bottom-4 right-6 bg-card/10 text-card/60 px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-card hover:text-foreground transition">
-                Download SVG
-              </button>
             </div>
           )}
 
           {/* AI Image Illustration */}
           {aiResult.imagePlaceholder && (
-            <div className="bg-primary p-1 rounded-pill shadow-elevated overflow-hidden group">
-              <div className="relative aspect-video bg-primary/80 flex flex-col items-center justify-center text-center p-8 rounded-[2.3rem]">
+            <div className="bg-primary p-1 rounded-xl shadow-elevated overflow-hidden group">
+              <div className="relative aspect-video bg-primary/80 flex flex-col items-center justify-center text-center p-8 rounded-[0.65rem]">
                 <div className="absolute inset-0 bg-gradient-to-t from-foreground/30 to-transparent"></div>
-                <ImageIcon className="text-primary-foreground/60 mb-4 animate-pulse-soft" size={48} />
+                <ImageIcon className="text-primary-foreground/60 mb-4 animate-pulse" size={48} />
                 <div className="relative z-10">
                   <p className="text-primary-foreground font-black text-lg">{aiResult.imagePlaceholder.title}</p>
                   <p className="text-primary-foreground/70 text-[10px] mt-2 italic max-w-xs uppercase tracking-tighter">
