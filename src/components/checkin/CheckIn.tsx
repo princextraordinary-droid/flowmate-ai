@@ -24,6 +24,8 @@ const CheckIn: React.FC = () => {
     try {
       await saveSync(energyLevel, reflection);
       setSaved(true);
+      // Dispatch event to update header energy bar
+      window.dispatchEvent(new CustomEvent('energy-updated'));
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setIsSaving(false);
@@ -48,10 +50,10 @@ const CheckIn: React.FC = () => {
   }
 
   return (
-    <div className="max-w-md mx-auto space-y-10 py-6 animate-fade-in pb-28">
+    <div className="max-w-md mx-auto space-y-6 sm:space-y-10 py-4 sm:py-6 animate-fade-in pb-28 px-2 sm:px-0">
       <div className="text-center">
-        <h2 className="text-3xl font-black text-foreground">Check-in</h2>
-        <p className="text-muted-foreground text-[10px] font-bold mt-1 uppercase tracking-[0.3em]">
+        <h2 className="text-2xl sm:text-3xl font-black text-foreground">Check-in</h2>
+        <p className="text-muted-foreground text-[9px] sm:text-[10px] font-bold mt-1 uppercase tracking-[0.2em] sm:tracking-[0.3em]">
           Sync your energy state
         </p>
       </div>
@@ -59,12 +61,12 @@ const CheckIn: React.FC = () => {
       <div className="space-y-8">
         {/* Energy Selector */}
         <div>
-          <div className="flex justify-between items-center gap-2">
+          <div className="flex justify-between items-center gap-1.5 sm:gap-2">
             {[1, 2, 3, 4, 5].map(lvl => (
               <button 
                 key={lvl}
                 onClick={() => setEnergyLevel(lvl)}
-                className={`w-14 h-14 rounded-pill font-black text-lg transition-all ${
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full font-black text-base sm:text-lg transition-all min-h-[48px] ${
                   energyLevel === lvl 
                     ? 'bg-primary text-primary-foreground scale-110 shadow-glow' 
                     : 'bg-card text-muted-foreground hover:text-foreground shadow-soft border border-border'
@@ -74,9 +76,9 @@ const CheckIn: React.FC = () => {
               </button>
             ))}
           </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground mt-6 px-1 font-bold uppercase tracking-widest opacity-60">
-            <span>Low Energy</span>
-            <span>Unstoppable</span>
+          <div className="flex justify-between text-[9px] sm:text-[10px] text-muted-foreground mt-4 sm:mt-6 px-1 font-bold uppercase tracking-widest opacity-60">
+            <span>Low</span>
+            <span>Peak</span>
           </div>
         </div>
 
