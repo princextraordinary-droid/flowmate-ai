@@ -18,19 +18,19 @@ const navItems: { id: View; icon: React.ElementType; label: string }[] = [
 
 const BottomNav: React.FC<BottomNavProps> = ({ currentView, onViewChange }) => {
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 glass-dark px-4 py-3 rounded-pill flex gap-2 shadow-elevated z-50">
+    <nav className="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 glass-dark px-2 sm:px-4 py-2 sm:py-3 rounded-full flex gap-1 sm:gap-2 shadow-elevated z-50 max-w-[calc(100vw-24px)]">
       {navItems.map(({ id, icon: Icon, label }) => (
         <button
           key={id}
           onClick={() => onViewChange(id)}
           aria-label={label}
-          className={`p-4 rounded-pill transition-all duration-300 ${
+          className={`p-3 sm:p-4 rounded-full transition-all duration-300 min-w-[44px] min-h-[44px] flex items-center justify-center ${
             currentView === id
               ? 'bg-primary text-primary-foreground shadow-glow'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary/20'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary/20 active:bg-secondary/40'
           }`}
         >
-          <Icon size={22} />
+          <Icon size={20} className="sm:w-[22px] sm:h-[22px]" />
         </button>
       ))}
     </nav>
