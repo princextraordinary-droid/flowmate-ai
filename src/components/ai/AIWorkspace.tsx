@@ -1,26 +1,18 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   Sparkles, 
-  Mic, 
   Image as ImageIcon, 
   Send, 
   Layers, 
   CheckCircle2, 
   FileCode, 
-  Settings,
-  FileText,
-  Globe,
-  X,
   Loader2,
   Wand2
 } from 'lucide-react';
 import { AIResult } from '@/types/task';
-import { useUserSettings } from '@/hooks/useUserSettings';
 import { useKnowledgeItems, KnowledgeItem } from '@/hooks/useKnowledgeItems';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import ApiKeySetup from './ApiKeySetup';
-import UsageIndicator from './UsageIndicator';
 import AttachmentButtons from '@/components/knowledge/AttachmentButtons';
 import KnowledgeItemCard from '@/components/knowledge/KnowledgeItemCard';
 
@@ -33,10 +25,8 @@ const AIWorkspace: React.FC = () => {
   const [aiResult, setAiResult] = useState<AIResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStep, setGenStep] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   
-  const { settings, usage, loading, hasApiKey, saveApiKey, refreshUsage } = useUserSettings();
   const { items, addItem, uploadFile, deleteItem } = useKnowledgeItems();
   const { toast } = useToast();
 
@@ -71,25 +61,6 @@ const AIWorkspace: React.FC = () => {
 
   const handleAIRequest = async () => {
     if (!aiInput.trim() && selectedItems.length === 0) return;
-    
-    if (!hasApiKey) {
-      setShowSettings(true);
-      toast({ 
-        title: "API Key Required", 
-        description: "Please add your Gemini API key first",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (usage.remaining <= 0) {
-      toast({ 
-        title: "Daily Limit Reached", 
-        description: "Your free requests reset at midnight UTC",
-        variant: "destructive"
-      });
-      return;
-    }
 
     setIsGenerating(true);
     setAiResult(null);
@@ -127,12 +98,18 @@ const AIWorkspace: React.FC = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        if (data.error === 'NO_API_KEY') {
-          setShowSettings(true);
-          toast({ title: "API Key Missing", description: data.message, variant: "destructive" });
-        } else if (data.error === 'INVALID_API_KEY') {
-          setShowSettings(true);
-          toast({ title: "Invalid API Key", description: "Please check your Gemini API key", variant: "destructive" });
+        if (response.status === 429) {
+          toast({ 
+            title: "Rate Limited", 
+            description: "Please try again in a moment", 
+            variant: "destructive" 
+          });
+        } else if (response.status === 402) {
+          toast({ 
+            title: "Credits Exhausted", 
+            description: "Please add AI credits in your Lovable workspace settings", 
+            variant: "destructive" 
+          });
         } else {
           toast({ title: "Error", description: data.message || "AI request failed", variant: "destructive" });
         }
@@ -151,7 +128,6 @@ const AIWorkspace: React.FC = () => {
       };
 
       setAiResult(result);
-      await refreshUsage();
       
     } catch (error) {
       console.error('AI request error:', error);
@@ -162,37 +138,8 @@ const AIWorkspace: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-2xl mx-auto flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-28">
-      {/* Usage & Settings */}
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <UsageIndicator {...usage} />
-        </div>
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`px-4 rounded-pill-sm border flex items-center gap-2 transition ${
-            showSettings ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border/50 hover:border-primary/50'
-          }`}
-        >
-          <Settings size={16} />
-          <span className="text-sm font-medium">API Key</span>
-        </button>
-      </div>
-
-      {/* API Key Setup */}
-      {showSettings && (
-        <ApiKeySetup onSave={saveApiKey} hasExistingKey={hasApiKey} />
-      )}
-
       {/* Knowledge Suite Items */}
       {items.length > 0 && (
         <div className="bg-card p-4 rounded-xl border border-border/50 space-y-3">
@@ -281,9 +228,9 @@ const AIWorkspace: React.FC = () => {
             />
             <button 
               onClick={handleAIRequest}
-              disabled={(!aiInput && selectedItems.length === 0) || isGenerating || !hasApiKey || usage.remaining <= 0}
+              disabled={(!aiInput && selectedItems.length === 0) || isGenerating}
               className="bg-primary text-primary-foreground w-12 h-12 rounded-xl flex items-center justify-center hover:opacity-90 disabled:opacity-30 shadow-glow transition-all"
-              title={!hasApiKey ? "Add your API key first" : usage.remaining <= 0 ? "Daily limit reached" : "Process with AI"}
+              title="Process with AI"
             >
               {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
             </button>
