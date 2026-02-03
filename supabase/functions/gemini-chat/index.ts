@@ -6,8 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const FREE_DAILY_LIMIT = 15; // Free tier requests per day
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -24,7 +22,16 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    if (!lovableApiKey) {
+      console.error("LOVABLE_API_KEY is not configured");
+      return new Response(
+        JSON.stringify({ error: "AI service not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Get user from token
     const token = authHeader.replace("Bearer ", "");
@@ -39,43 +46,9 @@ serve(async (req) => {
 
     const { prompt, fileType, overlayPrompt } = await req.json();
 
-    // Get user's API key
-    const { data: settings, error: settingsError } = await supabase
-      .from("user_settings")
-      .select("gemini_api_key")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (settingsError) {
-      console.error("Settings fetch error:", settingsError);
-      return new Response(
-        JSON.stringify({ error: "Failed to fetch settings" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!settings?.gemini_api_key) {
-      return new Response(
-        JSON.stringify({ error: "NO_API_KEY", message: "Please add your Gemini API key in settings" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check daily usage
-    const today = new Date().toISOString().split("T")[0];
-    const { data: usage, error: usageError } = await supabase
-      .from("api_usage")
-      .select("request_count")
-      .eq("user_id", user.id)
-      .eq("usage_date", today)
-      .maybeSingle();
-
-    const currentCount = usage?.request_count || 0;
-    const remainingRequests = Math.max(0, FREE_DAILY_LIMIT - currentCount);
-
     // Build the prompt
     const systemPrompt = `You are a helpful AI assistant for a productivity app. 
-Analyze the provided ${fileType} content and respond based on the user's instruction.
+Analyze the provided ${fileType || 'text'} content and respond based on the user's instruction.
 If asked for a diagram, include a mermaid.js code block.
 If asked for an image, describe what image should be generated.
 Be concise and actionable.`;
@@ -84,56 +57,50 @@ Be concise and actionable.`;
       ? `Content:\n${prompt}\n\nInstruction: ${overlayPrompt}`
       : `Content:\n${prompt}\n\nProvide a helpful summary with key points and action items.`;
 
-    // Call Gemini API
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.gemini_api_key}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: systemPrompt + "\n\n" + fullPrompt }] }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          }
-        })
-      }
-    );
+    // Call Lovable AI Gateway
+    console.log("Calling Lovable AI Gateway...");
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: fullPrompt }
+        ],
+      }),
+    });
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error("Gemini API error:", errorText);
-      
-      if (geminiResponse.status === 400 && errorText.includes("API_KEY_INVALID")) {
+    if (!response.ok) {
+      if (response.status === 429) {
+        console.error("Rate limit exceeded");
         return new Response(
-          JSON.stringify({ error: "INVALID_API_KEY", message: "Your Gemini API key is invalid" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "RATE_LIMITED", message: "Rate limit exceeded. Please try again in a moment." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (response.status === 402) {
+        console.error("Payment required");
+        return new Response(
+          JSON.stringify({ error: "PAYMENT_REQUIRED", message: "AI credits exhausted. Please add credits in Lovable settings." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
+      const errorText = await response.text();
+      console.error("AI gateway error:", response.status, errorText);
       return new Response(
-        JSON.stringify({ error: "Gemini API error", details: errorText }),
+        JSON.stringify({ error: "AI gateway error", details: errorText }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const geminiData = await geminiResponse.json();
-    const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated";
-
-    // Update usage count
-    if (usage) {
-      await supabase
-        .from("api_usage")
-        .update({ request_count: currentCount + 1 })
-        .eq("user_id", user.id)
-        .eq("usage_date", today);
-    } else {
-      await supabase
-        .from("api_usage")
-        .insert({ user_id: user.id, usage_date: today, request_count: 1 });
-    }
+    const data = await response.json();
+    const responseText = data.choices?.[0]?.message?.content || "No response generated";
+    console.log("AI response received successfully");
 
     // Parse response for structured output
     const hasMermaid = responseText.includes("```mermaid");
@@ -197,11 +164,6 @@ Be concise and actionable.`;
         prompt: overlayPrompt,
         style: "Educational / Conceptual"
       } : null,
-      usage: {
-        used: currentCount + 1,
-        limit: FREE_DAILY_LIMIT,
-        remaining: Math.max(0, FREE_DAILY_LIMIT - currentCount - 1)
-      }
     };
 
     return new Response(
