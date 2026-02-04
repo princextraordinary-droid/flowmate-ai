@@ -1,5 +1,5 @@
 import React from 'react';
-import { Quadrant, Task } from '@/types/task';
+import { Quadrant, Task, QuadrantId } from '@/types/task';
 import TaskCard from './TaskCard';
 
 interface QuadrantCardProps {
@@ -7,9 +7,18 @@ interface QuadrantCardProps {
   tasks: Task[];
   onTaskClick: (task: Task) => void;
   onToggleComplete: (taskId: string) => void;
+  onEditTask: (task: Task) => void;
+  onMoveToQuadrant: (taskId: string, quadrantId: QuadrantId) => void;
 }
 
-const QuadrantCard: React.FC<QuadrantCardProps> = ({ quadrant, tasks, onTaskClick, onToggleComplete }) => {
+const QuadrantCard: React.FC<QuadrantCardProps> = ({ 
+  quadrant, 
+  tasks, 
+  onTaskClick, 
+  onToggleComplete,
+  onEditTask,
+  onMoveToQuadrant
+}) => {
   const filteredTasks = tasks.filter(t => t.quadrant === quadrant.id);
 
   return (
@@ -30,6 +39,8 @@ const QuadrantCard: React.FC<QuadrantCardProps> = ({ quadrant, tasks, onTaskClic
             task={task} 
             onClick={() => onTaskClick(task)}
             onToggleComplete={() => onToggleComplete(task.id)}
+            onEdit={() => onEditTask(task)}
+            onMoveToQuadrant={(quadrantId) => onMoveToQuadrant(task.id, quadrantId)}
           />
         ))}
         {filteredTasks.length === 0 && (
