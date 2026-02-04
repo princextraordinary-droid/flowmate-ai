@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { History, ChevronDown, ChevronUp, Loader2, CheckCircle } from 'lucide-react';
+import { History, ChevronDown, ChevronUp, Loader2, CheckCircle, Quote, Sparkles } from 'lucide-react';
 import { useDailySyncs, DailySync } from '@/hooks/useDailySyncs';
 import { Button } from '@/components/ui/button';
+import { getRandomQuote } from '@/data/motivationalQuotes';
 
 const CheckIn: React.FC = () => {
   const { syncs, todaySync, loading, saveSync } = useDailySyncs();
@@ -10,6 +11,7 @@ const CheckIn: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [motivationalQuote, setMotivationalQuote] = useState<string | null>(null);
 
   // Load today's sync data
   useEffect(() => {
@@ -24,6 +26,8 @@ const CheckIn: React.FC = () => {
     try {
       await saveSync(energyLevel, reflection);
       setSaved(true);
+      // Show motivational quote based on energy level
+      setMotivationalQuote(getRandomQuote(energyLevel));
       // Dispatch event to update header energy bar
       window.dispatchEvent(new CustomEvent('energy-updated'));
       setTimeout(() => setSaved(false), 2000);
@@ -39,6 +43,16 @@ const CheckIn: React.FC = () => {
       month: 'short', 
       day: 'numeric' 
     });
+  };
+
+  const getEnergyLabel = (level: number) => {
+    const labels = ['', 'Very Low', 'Low', 'Balanced', 'High', 'Peak'];
+    return labels[level] || '';
+  };
+
+  const getEnergyEmoji = (level: number) => {
+    const emojis = ['', '😴', '😐', '🙂', '😊', '🔥'];
+    return emojis[level] || '';
   };
 
   if (loading) {
@@ -65,7 +79,10 @@ const CheckIn: React.FC = () => {
             {[1, 2, 3, 4, 5].map(lvl => (
               <button 
                 key={lvl}
-                onClick={() => setEnergyLevel(lvl)}
+                onClick={() => {
+                  setEnergyLevel(lvl);
+                  setMotivationalQuote(null); // Clear quote when changing energy
+                }}
                 className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full font-black text-base sm:text-lg transition-all min-h-[48px] ${
                   energyLevel === lvl 
                     ? 'bg-primary text-primary-foreground scale-110 shadow-glow' 
@@ -80,7 +97,30 @@ const CheckIn: React.FC = () => {
             <span>Low</span>
             <span>Peak</span>
           </div>
+          <div className="text-center mt-2">
+            <span className="text-2xl">{getEnergyEmoji(energyLevel)}</span>
+            <span className="ml-2 text-sm font-bold text-foreground">{getEnergyLabel(energyLevel)}</span>
+          </div>
         </div>
+
+        {/* Motivational Quote Card */}
+        {motivationalQuote && (
+          <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-6 rounded-pill border border-primary/20 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-primary/20 rounded-full">
+                <Sparkles size={20} className="text-primary" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-2">
+                  Your Daily Motivation
+                </p>
+                <blockquote className="text-sm font-medium text-foreground italic leading-relaxed">
+                  "{motivationalQuote}"
+                </blockquote>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reflection Card */}
         <div className="bg-card p-8 rounded-pill shadow-elevated border border-border/50 space-y-6">

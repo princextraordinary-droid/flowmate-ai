@@ -5,6 +5,49 @@ import { useAuth } from './useAuth';
 import { useToast } from './use-toast';
 import * as offlineDb from '@/lib/offlineDb';
 
+// Parse due date string to Date object for sorting
+function parseDueDate(due: string): Date {
+  if (!due) return new Date(9999, 11, 31); // Put tasks without due date at the end
+  
+  // Try to parse various formats
+  // Format: "Feb 4, 2025 at 10:30 AM" or similar
+  const dateMatch = due.match(/(\w+)\s+(\d+),?\s+(\d{4})(?:\s+at\s+(\d+):(\d+)\s*(AM|PM)?)?/i);
+  if (dateMatch) {
+    const [, month, day, year, hours, minutes, ampm] = dateMatch;
+    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const monthIndex = monthNames.findIndex(m => month.toLowerCase().startsWith(m));
+    
+    let hour = parseInt(hours || '0');
+    if (ampm?.toLowerCase() === 'pm' && hour !== 12) hour += 12;
+    if (ampm?.toLowerCase() === 'am' && hour === 12) hour = 0;
+    
+    return new Date(parseInt(year), monthIndex, parseInt(day), hour, parseInt(minutes || '0'));
+  }
+  
+  // Try ISO format
+  const isoDate = new Date(due);
+  if (!isNaN(isoDate.getTime())) return isoDate;
+  
+  // Special cases
+  if (due.toLowerCase() === 'today') return new Date();
+  if (due.toLowerCase() === 'tomorrow') {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  }
+  
+  return new Date(9999, 11, 31);
+}
+
+// Sort tasks by due date (ascending)
+function sortTasksByDueDate(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const dateA = parseDueDate(a.due);
+    const dateB = parseDueDate(b.due);
+    return dateA.getTime() - dateB.getTime();
+  });
+}
+
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +66,7 @@ export function useTasks() {
       // First load from IndexedDB for instant display
       const offlineTasks = await offlineDb.getAll<Task>('tasks', user.id);
       if (offlineTasks.length > 0) {
-        setTasks(offlineTasks);
+        setTasks(sortTasksByDueDate(offlineTasks));
       }
 
       // Then sync with Supabase if online
@@ -31,8 +74,7 @@ export function useTasks() {
         const { data, error } = await supabase
           .from('tasks')
           .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+          .eq('user_id', user.id);
 
         if (error) throw error;
 
@@ -51,7 +93,7 @@ export function useTasks() {
           await offlineDb.put('tasks', { ...task, user_id: user.id });
         }
 
-        setTasks(supabaseTasks);
+        setTasks(sortTasksByDueDate(supabaseTasks));
       }
     } catch (error) {
       console.error('Error loading tasks:', error);
@@ -72,8 +114,8 @@ export function useTasks() {
       id: crypto.randomUUID()
     };
 
-    // Optimistic update
-    setTasks(prev => [newTask, ...prev]);
+    // Optimistic update with sorting
+    setTasks(prev => sortTasksByDueDate([newTask, ...prev]));
 
     // Save to IndexedDB first
     await offlineDb.put('tasks', { ...newTask, user_id: user.id });
@@ -110,8 +152,11 @@ export function useTasks() {
   const updateTask = async (taskId: string, updates: Partial<Task>): Promise<void> => {
     if (!user) return;
 
-    // Optimistic update
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+    // Optimistic update with re-sorting if due date changed
+    setTasks(prev => {
+      const updated = prev.map(t => t.id === taskId ? { ...t, ...updates } : t);
+      return updates.due !== undefined ? sortTasksByDueDate(updated) : updated;
+    });
 
     // Get current task and update
     const currentTask = tasks.find(t => t.id === taskId);

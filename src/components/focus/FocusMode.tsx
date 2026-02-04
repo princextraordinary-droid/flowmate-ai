@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, Clock, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Play, Pause, Clock, CheckCircle2, RotateCcw, Trophy } from 'lucide-react';
 import { Task } from '@/types/task';
+import { useUserProgress } from '@/hooks/useUserProgress';
+import { useTasks } from '@/hooks/useTasks';
+import { useToast } from '@/hooks/use-toast';
+import XPBar from '@/components/xp/XPBar';
 
 interface FocusModeProps {
   selectedTask: Task | null;
@@ -10,6 +14,9 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [initialTime, setInitialTime] = useState(25 * 60);
+  const { addXP, getXPPerEnergy } = useUserProgress();
+  const { toggleTaskComplete } = useTasks();
+  const { toast } = useToast();
 
   // Sync timer with task duration when task changes
   useEffect(() => {
@@ -25,14 +32,61 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
     let interval: NodeJS.Timeout | null = null;
     if (timerActive && timeLeft > 0) {
       interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (timeLeft === 0) {
+    } else if (timeLeft === 0 && timerActive) {
       setTimerActive(false);
-      // Could add notification here
+      handleTimerComplete();
     }
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [timerActive, timeLeft]);
+
+  const handleTimerComplete = async () => {
+    if (selectedTask && selectedTask.status !== 'completed') {
+      // Award XP based on task energy
+      const { leveledUp, newLevel } = await addXP(selectedTask.energy);
+      
+      // Mark task as complete
+      await toggleTaskComplete(selectedTask.id);
+      
+      const xpGained = selectedTask.energy * getXPPerEnergy();
+      
+      if (leveledUp) {
+        toast({
+          title: `🎉 Level Up! You're now Level ${newLevel}!`,
+          description: `+${xpGained} XP earned from completing "${selectedTask.title}"`,
+        });
+      } else {
+        toast({
+          title: "Task Complete! 🎉",
+          description: `+${xpGained} XP earned`,
+        });
+      }
+    }
+  };
+
+  const handleManualComplete = async () => {
+    if (selectedTask && selectedTask.status !== 'completed') {
+      const { leveledUp, newLevel } = await addXP(selectedTask.energy);
+      await toggleTaskComplete(selectedTask.id);
+      
+      const xpGained = selectedTask.energy * getXPPerEnergy();
+      
+      if (leveledUp) {
+        toast({
+          title: `🎉 Level Up! You're now Level ${newLevel}!`,
+          description: `+${xpGained} XP earned`,
+        });
+      } else {
+        toast({
+          title: "Task Complete! 🎉",
+          description: `+${xpGained} XP earned`,
+        });
+      }
+      
+      setTimerActive(false);
+    }
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -48,7 +102,12 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
   const progressPercentage = initialTime > 0 ? ((initialTime - timeLeft) / initialTime) * 100 : 0;
 
   return (
-    <div className="flex flex-col items-center justify-center py-8 sm:py-16 space-y-8 sm:space-y-12 animate-zoom-in px-4">
+    <div className="flex flex-col items-center justify-center py-8 sm:py-12 space-y-6 sm:space-y-8 animate-zoom-in px-4 pb-28">
+      {/* XP Bar */}
+      <div className="w-full max-w-xs">
+        <XPBar />
+      </div>
+
       {/* Timer Display */}
       <div className="relative group">
         <div className="absolute -inset-8 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition duration-1000"></div>
@@ -70,7 +129,7 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
           
           {selectedTask && (
             <p className="mt-2 text-xs text-muted-foreground">
-              {selectedTask.duration} min session
+              {selectedTask.duration} min session • {selectedTask.energy}⚡ = {selectedTask.energy * getXPPerEnergy()} XP
             </p>
           )}
         </div>
@@ -82,7 +141,7 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
           <div className="bg-primary p-3 rounded-pill-sm text-primary-foreground shadow-glow flex-shrink-0">
             <CheckCircle2 size={24} />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
               Active Task
             </p>
@@ -128,6 +187,15 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
         >
           <RotateCcw size={24} className="sm:w-7 sm:h-7" />
         </button>
+        {selectedTask && selectedTask.status !== 'completed' && (
+          <button 
+            onClick={handleManualComplete}
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-pill flex items-center justify-center transition border shadow-soft bg-green-500 hover:bg-green-600 text-white"
+            title="Mark as complete and earn XP"
+          >
+            <Trophy size={24} className="sm:w-7 sm:h-7" />
+          </button>
+        )}
       </div>
     </div>
   );
