@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, Clock, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, Clock, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Task } from '@/types/task';
 
 interface FocusModeProps {
@@ -9,6 +9,17 @@ interface FocusModeProps {
 const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [initialTime, setInitialTime] = useState(25 * 60);
+
+  // Sync timer with task duration when task changes
+  useEffect(() => {
+    if (selectedTask) {
+      const durationInSeconds = selectedTask.duration * 60;
+      setTimeLeft(durationInSeconds);
+      setInitialTime(durationInSeconds);
+      setTimerActive(false);
+    }
+  }, [selectedTask]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -16,6 +27,7 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
       interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
     } else if (timeLeft === 0) {
       setTimerActive(false);
+      // Could add notification here
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -29,12 +41,14 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
   };
 
   const resetTimer = () => {
-    setTimeLeft(25 * 60);
+    setTimeLeft(initialTime);
     setTimerActive(false);
   };
 
+  const progressPercentage = initialTime > 0 ? ((initialTime - timeLeft) / initialTime) * 100 : 0;
+
   return (
-    <div className="flex flex-col items-center justify-center py-16 space-y-12 animate-zoom-in">
+    <div className="flex flex-col items-center justify-center py-8 sm:py-16 space-y-8 sm:space-y-12 animate-zoom-in px-4">
       {/* Timer Display */}
       <div className="relative group">
         <div className="absolute -inset-8 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition duration-1000"></div>
@@ -42,46 +56,77 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-60">
             Focus Block
           </span>
-          <h2 className="text-8xl font-black text-foreground font-mono mt-4 tabular-nums tracking-tighter">
+          <h2 className="text-6xl sm:text-8xl font-black text-foreground font-mono mt-4 tabular-nums tracking-tighter">
             {formatTime(timeLeft)}
           </h2>
+          
+          {/* Progress Bar */}
+          <div className="mt-4 w-full max-w-xs mx-auto h-2 bg-secondary rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-primary transition-all duration-1000"
+              style={{ width: `${progressPercentage}%` }}
+            />
+          </div>
+          
+          {selectedTask && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {selectedTask.duration} min session
+            </p>
+          )}
         </div>
       </div>
 
       {/* Active Task */}
-      {selectedTask && (
-        <div className="bg-card p-5 rounded-pill shadow-elevated border border-border/50 w-full max-w-xs flex items-center gap-4 animate-slide-up">
-          <div className="bg-primary p-3 rounded-pill-sm text-primary-foreground shadow-glow">
+      {selectedTask ? (
+        <div className="bg-card p-4 sm:p-5 rounded-pill shadow-elevated border border-border/50 w-full max-w-xs flex items-center gap-4 animate-slide-up">
+          <div className="bg-primary p-3 rounded-pill-sm text-primary-foreground shadow-glow flex-shrink-0">
             <CheckCircle2 size={24} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
               Active Task
             </p>
-            <p className="font-bold text-foreground text-sm leading-none mt-1">
+            <p className="font-bold text-foreground text-sm leading-tight mt-1 truncate">
               {selectedTask.title}
             </p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {selectedTask.due} • {selectedTask.energy}⚡
+            </p>
           </div>
+        </div>
+      ) : (
+        <div className="bg-card/50 p-5 rounded-pill border border-dashed border-border w-full max-w-xs text-center">
+          <p className="text-sm text-muted-foreground">
+            Tap a task from Dashboard to start focusing
+          </p>
         </div>
       )}
 
       {/* Controls */}
-      <div className="flex gap-6 relative">
+      <div className="flex gap-4 sm:gap-6 relative">
         <button 
           onClick={() => setTimerActive(!timerActive)}
-          className={`w-20 h-20 rounded-pill flex items-center justify-center text-primary-foreground transition-all shadow-elevated ${
-            timerActive 
-              ? 'bg-amber-500 hover:bg-amber-600' 
-              : 'bg-primary hover:opacity-90 shadow-glow'
+          disabled={!selectedTask}
+          className={`w-16 h-16 sm:w-20 sm:h-20 rounded-pill flex items-center justify-center text-primary-foreground transition-all shadow-elevated ${
+            !selectedTask
+              ? 'bg-muted cursor-not-allowed'
+              : timerActive 
+                ? 'bg-amber-500 hover:bg-amber-600' 
+                : 'bg-primary hover:opacity-90 shadow-glow'
           }`}
         >
-          {timerActive ? <Pause size={32} /> : <Play size={32} className="ml-1" />}
+          {timerActive ? <Pause size={28} className="sm:w-8 sm:h-8" /> : <Play size={28} className="ml-1 sm:w-8 sm:h-8" />}
         </button>
         <button 
           onClick={resetTimer}
-          className="w-20 h-20 rounded-pill bg-card text-muted-foreground flex items-center justify-center hover:bg-secondary transition border border-border shadow-soft"
+          disabled={!selectedTask}
+          className={`w-16 h-16 sm:w-20 sm:h-20 rounded-pill flex items-center justify-center transition border shadow-soft ${
+            !selectedTask
+              ? 'bg-muted cursor-not-allowed text-muted-foreground border-muted'
+              : 'bg-card text-muted-foreground hover:bg-secondary border-border'
+          }`}
         >
-          <Clock size={28} />
+          <RotateCcw size={24} className="sm:w-7 sm:h-7" />
         </button>
       </div>
     </div>

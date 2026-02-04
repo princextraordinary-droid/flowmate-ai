@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Zap, Loader2 } from 'lucide-react';
 import { QUADRANTS } from '@/data/constants';
-import { Task } from '@/types/task';
+import { Task, QuadrantId } from '@/types/task';
 import { useTasks } from '@/hooks/useTasks';
 import QuadrantCard from './QuadrantCard';
 import AddTaskDialog from './AddTaskDialog';
+import EditTaskDialog from './EditTaskDialog';
 
 interface DashboardProps {
   onTaskClick: (task: Task) => void;
@@ -15,11 +16,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
     tasks,
     loading,
     addTask,
+    updateTask,
+    deleteTask,
     toggleTaskComplete,
     autoFixMissedTasks
   } = useTasks();
 
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
   const hasMissedTasks = tasks.some(t => t.status === 'missed');
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+    setEditDialogOpen(true);
+  };
+
+  const handleMoveToQuadrant = async (taskId: string, quadrantId: QuadrantId) => {
+    await updateTask(taskId, { quadrant: quadrantId });
+  };
 
   if (loading) {
     return (
@@ -56,10 +71,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
             quadrant={quadrant} 
             tasks={tasks} 
             onTaskClick={onTaskClick} 
-            onToggleComplete={toggleTaskComplete} 
+            onToggleComplete={toggleTaskComplete}
+            onEditTask={handleEditTask}
+            onMoveToQuadrant={handleMoveToQuadrant}
           />
         ))}
       </div>
+
+      <EditTaskDialog
+        task={editingTask}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onUpdateTask={updateTask}
+        onDeleteTask={deleteTask}
+      />
     </div>
   );
 };
