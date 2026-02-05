@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 interface DateTimePickerProps {
   value: Date | undefined;
@@ -19,9 +19,6 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({ value, onChange }) => {
   const [selectedHour, setSelectedHour] = useState<string>(value ? format(value, 'HH') : '09');
   const [selectedMinute, setSelectedMinute] = useState<string>(value ? format(value, 'mm') : '00');
 
-  const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-  const minutes = ['00', '15', '30', '45'];
-
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
     if (date) {
@@ -29,10 +26,32 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({ value, onChange }) => {
     }
   };
 
+  const handleHourChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+    const num = parseInt(val) || 0;
+    if (num >= 0 && num <= 23) {
+      setSelectedHour(val);
+    } else if (val === '') {
+      setSelectedHour('');
+    }
+  };
+
+  const handleMinuteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+    const num = parseInt(val) || 0;
+    if (num >= 0 && num <= 59) {
+      setSelectedMinute(val);
+    } else if (val === '') {
+      setSelectedMinute('');
+    }
+  };
+
   const handleConfirmTime = () => {
     if (selectedDate) {
       const newDate = new Date(selectedDate);
-      newDate.setHours(parseInt(selectedHour), parseInt(selectedMinute));
+      const hour = selectedHour ? parseInt(selectedHour) : 0;
+      const minute = selectedMinute ? parseInt(selectedMinute) : 0;
+      newDate.setHours(hour, minute);
       onChange(newDate);
     }
     setOpen(false);
@@ -76,43 +95,39 @@ const DateTimePicker: React.FC<DateTimePickerProps> = ({ value, onChange }) => {
           <div className="p-4 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Clock className="h-4 w-4" />
-              <span>Select Time</span>
+              <span>Enter Time</span>
             </div>
             
-            <div className="flex items-center gap-2">
-              <Select value={selectedHour} onValueChange={setSelectedHour}>
-                <SelectTrigger className="w-[80px]">
-                  <SelectValue placeholder="Hour" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[200px]">
-                  {hours.map((hour) => (
-                    <SelectItem key={hour} value={hour}>
-                      {hour}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 justify-center">
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={selectedHour}
+                onChange={handleHourChange}
+                placeholder="HH"
+                className="w-[70px] text-center text-lg font-bold min-h-[44px]"
+                maxLength={2}
+              />
               
               <span className="text-lg font-bold">:</span>
               
-              <Select value={selectedMinute} onValueChange={setSelectedMinute}>
-                <SelectTrigger className="w-[80px]">
-                  <SelectValue placeholder="Min" />
-                </SelectTrigger>
-                <SelectContent>
-                  {minutes.map((min) => (
-                    <SelectItem key={min} value={min}>
-                      {min}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={selectedMinute}
+                onChange={handleMinuteChange}
+                placeholder="MM"
+                className="w-[70px] text-center text-lg font-bold min-h-[44px]"
+                maxLength={2}
+              />
             </div>
 
-            <div className="text-sm text-muted-foreground">
+            <p className="text-xs text-center text-muted-foreground">24-hour format (00-23 : 00-59)</p>
+
+            <div className="text-sm text-muted-foreground text-center">
               {selectedDate && (
                 <span>
-                  {format(selectedDate, 'EEEE, MMMM d, yyyy')} at {selectedHour}:{selectedMinute}
+                  {format(selectedDate, 'EEEE, MMMM d, yyyy')} at {selectedHour || '00'}:{selectedMinute || '00'}
                 </span>
               )}
             </div>

@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
-import { Zap, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 import { QUADRANTS } from '@/data/constants';
 import { Task, QuadrantId } from '@/types/task';
 import { useTasks } from '@/hooks/useTasks';
+import { useUserProgress } from '@/hooks/useUserProgress';
+import { useToast } from '@/hooks/use-toast';
 import QuadrantCard from './QuadrantCard';
 import AddTaskDialog from './AddTaskDialog';
 import EditTaskDialog from './EditTaskDialog';
+import MissedTasks from './MissedTasks';
+import CalendarOverview from './CalendarOverview';
+import XPBar from '@/components/xp/XPBar';
 
 interface DashboardProps {
   onTaskClick: (task: Task) => void;
@@ -19,13 +24,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
     updateTask,
     deleteTask,
     toggleTaskComplete,
-    autoFixMissedTasks
+    registerXPCallbacks
   } = useTasks();
+  
+  const { addXP, removeXP, getXPPerEnergy } = useUserProgress();
+  const { toast } = useToast();
 
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  const hasMissedTasks = tasks.some(t => t.status === 'missed');
+  // Register XP callbacks for task completion
+  useEffect(() => {
+    const handleComplete = async (energy: number) => {
+      const xpPerEnergy = getXPPerEnergy();
+      const xpGained = energy * xpPerEnergy;
+      const result = await addXP(energy);
+      
+      toast({
+        title: result.leveledUp ? `🎉 Level Up! Level ${result.newLevel}` : `+${xpGained} XP earned!`,
+        description: result.leveledUp ? "Congratulations on reaching a new level!" : `Energy ${energy} ⚡ = ${xpGained} XP`,
+      });
+    };
+
+    const handleUncomplete = async (energy: number) => {
+      const xpPerEnergy = getXPPerEnergy();
+      const xpLost = energy * xpPerEnergy;
+      await removeXP(energy);
+      
+      toast({
+        title: `-${xpLost} XP`,
+        description: "Task marked as incomplete",
+        variant: "destructive",
+      });
+    };
+
+    registerXPCallbacks(handleComplete, handleUncomplete);
+  }, [addXP, removeXP, getXPPerEnergy, registerXPCallbacks, toast]);
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
@@ -34,6 +68,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
 
   const handleMoveToQuadrant = async (taskId: string, quadrantId: QuadrantId) => {
     await updateTask(taskId, { quadrant: quadrantId });
+  };
+
+  const handleRescheduleMissedTask = async (taskId: string, newDue: string) => {
+    await updateTask(taskId, { due: newDue, status: 'pending' });
+    toast({ title: "Task rescheduled", description: "The task has been rescheduled" });
+  };
+
+  const handleCompleteMissedTask = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      await updateTask(taskId, { status: 'completed' });
+      const xpPerEnergy = getXPPerEnergy();
+      const xpGained = task.energy * xpPerEnergy;
+      const result = await addXP(task.energy);
+      
+      toast({
+        title: result.leveledUp ? `🎉 Level Up! Level ${result.newLevel}` : `Task completed! +${xpGained} XP`,
+        description: task.title,
+      });
+    }
   };
 
   if (loading) {
@@ -52,17 +106,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
           <p className="text-[10px] sm:text-xs text-muted-foreground font-medium tracking-tight">Tasks Dashboard</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          {hasMissedTasks && (
-            <button 
-              onClick={autoFixMissedTasks} 
-              className="bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:opacity-90 shadow-glow transition-all min-h-[44px]"
-            >
-              <Zap size={14} /> Auto-Fix
-            </button>
-          )}
+          <CalendarOverview tasks={tasks} />
           <AddTaskDialog onAddTask={addTask} />
         </div>
       </div>
+
+      {/* XP Bar - Large version */}
+      <XPBar size="large" />
+
+      {/* Missed Tasks Section */}
+      <MissedTasks 
+        tasks={tasks}
+        onReschedule={handleRescheduleMissedTask}
+        onComplete={handleCompleteMissedTask}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         {Object.values(QUADRANTS).map(quadrant => (

@@ -88,6 +88,10 @@ export default {
   				delegate: 'hsl(var(--quadrant-delegate))',
   				eliminate: 'hsl(var(--quadrant-eliminate))'
   			},
+  			missed: {
+  				DEFAULT: 'hsl(var(--missed))',
+  				foreground: 'hsl(var(--missed-foreground))'
+  			},
   			sidebar: {
   				DEFAULT: 'hsl(var(--sidebar-background))',
   				foreground: 'hsl(var(--sidebar-foreground))',

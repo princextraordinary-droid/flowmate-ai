@@ -45,6 +45,10 @@
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
 
+    /* Missed tasks - Crimson/Deep Red */
+    --missed: 0 79% 33%;
+    --missed-foreground: 0 0% 100%;
+
     --border: 212 26% 83%;
     --input: 212 26% 83%;
     --ring: 200 98% 39%;
@@ -110,6 +114,10 @@
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 85% 97%;
+
+    /* Missed tasks - Crimson/Deep Red */
+    --missed: 0 79% 33%;
+    --missed-foreground: 0 0% 100%;
 
     --border: 215 19% 34%;
     --input: 215 19% 34%;

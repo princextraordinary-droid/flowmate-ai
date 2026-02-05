@@ -54,6 +54,18 @@ export function useTasks() {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Callback to award XP when task is completed
+  const [onTaskComplete, setOnTaskComplete] = useState<((energy: number) => void) | null>(null);
+  const [onTaskUncomplete, setOnTaskUncomplete] = useState<((energy: number) => void) | null>(null);
+
+  const registerXPCallbacks = (
+    completeCallback: (energy: number) => void,
+    uncompleteCallback: (energy: number) => void
+  ) => {
+    setOnTaskComplete(() => completeCallback);
+    setOnTaskUncomplete(() => uncompleteCallback);
+  };
+
   // Load tasks from both IndexedDB and Supabase
   const loadTasks = useCallback(async () => {
     if (!user) {
@@ -223,6 +235,13 @@ export function useTasks() {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
     await updateTask(taskId, { status: newStatus });
     
+    // Award or remove XP based on status change
+    if (newStatus === 'completed' && onTaskComplete) {
+      onTaskComplete(task.energy);
+    } else if (newStatus === 'pending' && onTaskUncomplete) {
+      onTaskUncomplete(task.energy);
+    }
+
     toast({ 
       title: newStatus === 'completed' ? "Task completed! 🎉" : "Task reopened",
       description: task.title
@@ -245,6 +264,7 @@ export function useTasks() {
     deleteTask,
     toggleTaskComplete,
     autoFixMissedTasks,
-    reload: loadTasks
+    reload: loadTasks,
+    registerXPCallbacks
   };
 }
