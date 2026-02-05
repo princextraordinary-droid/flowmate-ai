@@ -149,6 +149,35 @@ export function useUserProgress() {
     }
   };
 
+  const removeXP = async (energy: number): Promise<void> => {
+    if (!user || !progress) return;
+
+    const xpPerEnergy = getXPPerEnergy(progress.current_level);
+    const xpToRemove = energy * xpPerEnergy;
+    
+    const newXP = Math.max(0, progress.current_xp - xpToRemove);
+
+    try {
+      const { error } = await supabase
+        .from('user_progress')
+        .update({
+          current_xp: newXP,
+          total_xp_earned: Math.max(0, progress.total_xp_earned - xpToRemove),
+        })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setProgress(prev => prev ? {
+        ...prev,
+        current_xp: newXP,
+        total_xp_earned: Math.max(0, prev.total_xp_earned - xpToRemove),
+      } : null);
+    } catch (error) {
+      console.error('Error removing XP:', error);
+    }
+  };
+
   const getXPProgress = () => {
     if (!progress) return { current: 0, required: 1000, percentage: 0 };
     const required = getXPRequiredForLevel(progress.current_level);
@@ -160,6 +189,7 @@ export function useUserProgress() {
     progress,
     loading,
     addXP,
+    removeXP,
     getXPProgress,
     getXPPerEnergy: () => progress ? getXPPerEnergy(progress.current_level) : 50,
     reload: loadProgress,
