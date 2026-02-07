@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, Send, BookOpen, X, Brain, 
-  FileUp, FileDown, Trash2,
+  FileUp, FileDown, Trash2, StickyNote,
   Loader2, Square, User, LogOut, Settings, History
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,8 +9,10 @@ import { extractTextFromPdf } from '@/lib/pdfExtractor';
 import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { useNotes } from '@/hooks/useNotes';
 
 const GEMINI_MODEL = "gemini-2.5-flash";
+const DAILY_LIMIT = 15;
 
 interface Message {
   role: 'user' | 'assistant';
@@ -34,6 +36,7 @@ interface SavedGuide {
 const FlowmateAI: React.FC = () => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const { createNote } = useNotes();
   
   const [userApiKey, setUserApiKey] = useState('');
   const [isKeySaved, setIsKeySaved] = useState(false);
@@ -149,6 +152,38 @@ const FlowmateAI: React.FC = () => {
     toast({ title: "PDF exported!", description: filename });
   };
 
+  // Check if user exceeded daily limit
+  const isLimitExceeded = requestCount >= DAILY_LIMIT;
+
+  // --- SAVE TO NOTES ---
+  const saveToNotes = async () => {
+    if (messages.length === 0) {
+      toast({ title: "No conversation to save", variant: "destructive" });
+      return;
+    }
+
+    const conversationText = messages.map(m => 
+      `${m.role === 'user' ? 'YOU' : 'FLOWMATE'}:\n${m.content}`
+    ).join('\n\n---\n\n');
+
+    const title = `Flowmate Chat - ${new Date().toLocaleDateString()}`;
+    const note = await createNote(title);
+    
+    if (note) {
+      // Update the note with conversation content and AI content
+      const { supabase } = await import('@/integrations/supabase/client');
+      await supabase
+        .from('notes')
+        .update({ 
+          content: conversationText,
+          ai_generated_content: messages.filter(m => m.role === 'assistant').map(m => m.content).join('\n\n---\n\n')
+        })
+        .eq('id', note.id);
+      
+      toast({ title: "Saved to Notes!", description: "Find it in your Notes tab" });
+    }
+  };
+
   // --- AI LOGIC WITH MEMORY (Direct Gemini API) ---
   const handleAiAction = async () => {
     if (!input && attachments.length === 0) return;
@@ -156,6 +191,16 @@ const FlowmateAI: React.FC = () => {
       setShowSettings(true); 
       toast({ title: "API key required", description: "Please enter your Gemini API key", variant: "destructive" });
       return; 
+    }
+
+    // Check daily limit
+    if (isLimitExceeded) {
+      toast({ 
+        title: "Daily limit reached", 
+        description: `You've used all ${DAILY_LIMIT} requests for today. Try again tomorrow!`, 
+        variant: "destructive" 
+      });
+      return;
     }
 
     setIsLoading(true);
@@ -190,7 +235,32 @@ const FlowmateAI: React.FC = () => {
             systemInstruction: { 
               parts: [{ 
                 text: `You are Flowmate, a personalized student companion for ${user?.user_metadata?.full_name || user?.email || 'the student'}. 
-                Format: Use ALL CAPS for headers. Use '•' for all lists. Be encouraging and academic.` 
+
+CRITICAL FORMATTING RULES (YOU MUST FOLLOW THESE EXACTLY):
+• Provide ALL responses in PLAIN TEXT ONLY
+• Do NOT use Markdown (no asterisks ** for bolding, no # for headings)
+• Do NOT use LaTeX (no dollar signs $, no \\text blocks)
+• Do NOT use HTML tags
+
+FOR HEADINGS:
+• Use ALL CAPS on a new line for main headings
+• Add a blank line before and after headings
+
+FOR LISTS:
+• Use '•' bullet points for all unordered lists
+• Use '1.' '2.' '3.' for numbered lists
+• Each list item on its own line
+
+FOR CHEMICAL/MATH FORMULAS:
+• Use standard text with Unicode subscripts: CO₂, H₂O, O₂, C₆H₁₂O₆
+• Write equations in plain text: 6CO₂ + 6H₂O + Light Energy → C₆H₁₂O₆ + 6O₂
+• Use → for arrows, ² ³ for superscripts, ₂ ₃ for subscripts
+
+FOR EMPHASIS:
+• Use ALL CAPS for important terms instead of bold
+• Use quotation marks for definitions
+
+Be encouraging, academic, and helpful. Structure your responses clearly.` 
               }] 
             }
           })
@@ -345,6 +415,9 @@ const FlowmateAI: React.FC = () => {
         <div className="flex items-center gap-2">
           {messages.length > 0 && (
             <>
+              <Button variant="ghost" size="icon" onClick={saveToNotes} title="Save to Notes">
+                <StickyNote size={18} />
+              </Button>
               <Button variant="ghost" size="icon" onClick={exportToPDF} title="Export PDF">
                 <FileDown size={20} />
               </Button>
@@ -402,8 +475,24 @@ const FlowmateAI: React.FC = () => {
             <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
               {/* Usage Stats */}
               <div className="p-4 bg-muted rounded-xl">
-                <p className="text-xs text-muted-foreground">Today's Requests</p>
-                <p className="text-2xl font-bold text-foreground">{requestCount}</p>
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-xs text-muted-foreground">Today's Usage</p>
+                  <p className="text-xs font-medium text-muted-foreground">{requestCount} / {DAILY_LIMIT}</p>
+                </div>
+                <div className="w-full bg-border rounded-full h-2 mb-2">
+                  <div 
+                    className={`h-2 rounded-full transition-all ${
+                      isLimitExceeded ? 'bg-destructive' : 'bg-primary'
+                    }`}
+                    style={{ width: `${Math.min((requestCount / DAILY_LIMIT) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {isLimitExceeded 
+                    ? '⚠️ Daily limit reached. Resets at midnight.'
+                    : `${DAILY_LIMIT - requestCount} requests remaining today`
+                  }
+                </p>
               </div>
 
               {/* Saved Guides */}
