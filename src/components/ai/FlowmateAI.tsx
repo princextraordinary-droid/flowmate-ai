@@ -251,7 +251,7 @@ const FlowmateAI: React.FC = () => {
     }
   };
 
-  // --- AI LOGIC - CALLS SECURE EDGE FUNCTION ---
+  // --- AI LOGIC - CALLS GEMINI API DIRECTLY ---
   const handleAiAction = async () => {
     if (!input && attachments.length === 0) return;
     
@@ -273,61 +273,99 @@ const FlowmateAI: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast({ title: "Please sign in", variant: "destructive" });
+      // Get the API key from user_settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('user_settings')
+        .select('gemini_api_key')
+        .eq('user_id', user!.id)
+        .single();
+
+      if (settingsError || !settingsData?.gemini_api_key) {
+        setHasApiKey(false);
+        setShowSettings(true);
+        toast({ title: "API key required", description: "Please enter your Gemini API key", variant: "destructive" });
         return;
       }
 
-      // Call the secure edge function
-      const response = await supabase.functions.invoke('gemini-chat', {
-        body: {
-          prompt: input || "Summarize the context.",
-          messages: messages,
-          attachments: attachments.map(att => ({
-            type: att.type,
-            data: att.data,
-            name: att.name,
-            mime: att.mime
-          }))
-        }
-      });
+      const apiKey = settingsData.gemini_api_key;
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Failed to get response');
+      // Build conversation history for Gemini format
+      const geminiHistory = messages.map((m) => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }]
+      }));
+
+      // Build current prompt parts
+      const currentPromptParts: any[] = [{ text: input || "Summarize the context." }];
+
+      // Add attachments if provided
+      for (const att of attachments) {
+        if (att.type === 'image' || att.type === 'audio') {
+          currentPromptParts.push({
+            inlineData: { mimeType: att.mime, data: att.data }
+          });
+        } else if (att.type === 'pdf') {
+          currentPromptParts.push({ text: `\n\n[${att.name}]:\n${att.data}` });
+        }
       }
 
-      const data = response.data;
+      const systemInstruction = `You are Flowmate, a personalized student companion for ${user?.email || 'the student'}. 
+
+CRITICAL FORMATTING RULES (YOU MUST FOLLOW THESE EXACTLY):
+• Provide ALL responses in PLAIN TEXT ONLY
+• Do NOT use Markdown (no asterisks ** for bolding, no # for headings)
+• Do NOT use LaTeX (no dollar signs $, no \\text blocks)
+• Do NOT use HTML tags
+
+FOR HEADINGS:
+• Use ALL CAPS on a new line for main headings
+• Add a blank line before and after headings
+
+FOR LISTS:
+• Use '•' bullet points for all unordered lists
+• Use '1.' '2.' '3.' for numbered lists
+• Each list item on its own line
+
+FOR CHEMICAL/MATH FORMULAS:
+• Use standard text with Unicode subscripts: CO₂, H₂O, O₂, C₆H₁₂O₆
+• Write equations in plain text: 6CO₂ + 6H₂O + Light Energy → C₆H₁₂O₆ + 6O₂
+• Use → for arrows, ² ³ for superscripts, ₂ ₃ for subscripts
+
+FOR EMPHASIS:
+• Use ALL CAPS for important terms instead of bold
+• Use quotation marks for definitions
+
+Be encouraging, academic, and helpful. Structure your responses clearly.`;
+
+      // Call Gemini API directly
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [...geminiHistory, { role: 'user', parts: currentPromptParts }],
+            systemInstruction: { parts: [{ text: systemInstruction }] }
+          })
+        }
+      );
+
+      const data = await response.json();
 
       if (data.error) {
-        // Handle specific errors
-        if (data.error === 'API_KEY_REQUIRED') {
+        if (data.error.code === 400 || data.error.message?.includes('API key')) {
           setHasApiKey(false);
           setShowSettings(true);
-          toast({ title: "API key required", description: data.message, variant: "destructive" });
+          toast({ title: "Invalid API key", description: "Please check your Gemini API key", variant: "destructive" });
           return;
         }
-        if (data.error === 'INVALID_API_KEY') {
-          setHasApiKey(false);
-          setShowSettings(true);
-          toast({ title: "Invalid API key", description: data.message, variant: "destructive" });
-          return;
-        }
-        if (data.error === 'RATE_LIMITED') {
-          setRequestCount(data.usage?.count || DAILY_LIMIT);
-          toast({ title: "Rate limit exceeded", description: data.message, variant: "destructive" });
-          return;
-        }
-        throw new Error(data.message || data.error);
+        throw new Error(data.error.message || 'AI service error');
       }
 
-      const aiText = data.response || 'No response generated';
-      
-      // Update usage from server response
-      if (data.usage) {
-        setRequestCount(data.usage.count);
-      }
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
+
+      // Update local request count
+      setRequestCount(prev => prev + 1);
 
       setMessages(prev => [...prev, 
         { role: 'user', content: input || "Attachment analysis" },
