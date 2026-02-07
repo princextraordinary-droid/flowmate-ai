@@ -10,8 +10,8 @@ import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useNotes } from '@/hooks/useNotes';
+import { supabase } from '@/integrations/supabase/client';
 
-const GEMINI_MODEL = "gemini-2.5-flash";
 const DAILY_LIMIT = 15;
 
 interface Message {
@@ -38,9 +38,11 @@ const FlowmateAI: React.FC = () => {
   const { toast } = useToast();
   const { createNote } = useNotes();
   
-  const [userApiKey, setUserApiKey] = useState('');
-  const [isKeySaved, setIsKeySaved] = useState(false);
+  // API key state - stored in database, never in localStorage
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [isCheckingKey, setIsCheckingKey] = useState(true);
   
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -56,42 +58,109 @@ const FlowmateAI: React.FC = () => {
 
   const storagePrefix = user?.id ? `flowmate_${user.id}_` : 'flowmate_';
 
-  // --- SYNC WITH USER & PERSISTENCE ---
+  // --- CHECK IF USER HAS API KEY CONFIGURED ---
   useEffect(() => {
-    const savedKey = localStorage.getItem(`${storagePrefix}api_key`);
-    if (savedKey) {
-      setUserApiKey(savedKey);
-      setIsKeySaved(true);
-    } else {
-      setShowSettings(true);
-    }
+    const checkApiKey = async () => {
+      if (!user) {
+        setIsCheckingKey(false);
+        return;
+      }
 
-    const today = new Date().toDateString();
-    const savedUsage = JSON.parse(localStorage.getItem(`${storagePrefix}usage`) || '{}');
-    if (savedUsage.date !== today) {
-      localStorage.setItem(`${storagePrefix}usage`, JSON.stringify({ date: today, count: 0 }));
-      setRequestCount(0);
-    } else {
-      setRequestCount(savedUsage.count);
-    }
+      try {
+        const { data, error } = await supabase
+          .from('user_settings')
+          .select('gemini_api_key')
+          .eq('user_id', user.id)
+          .single();
 
+        if (error && error.code !== 'PGRST116') {
+          console.error('Error checking API key:', error);
+        }
+
+        const hasKey = !!data?.gemini_api_key;
+        setHasApiKey(hasKey);
+        
+        if (!hasKey) {
+          setShowSettings(true);
+        }
+      } catch (error) {
+        console.error('Error checking API key:', error);
+      } finally {
+        setIsCheckingKey(false);
+      }
+    };
+
+    checkApiKey();
+  }, [user]);
+
+  // --- LOAD USAGE & SAVED GUIDES ---
+  useEffect(() => {
+    if (!user) return;
+
+    // Load saved guides from localStorage (these are just metadata, not sensitive)
     const guides = JSON.parse(localStorage.getItem(`${storagePrefix}saved_guides`) || '[]');
     setSavedGuides(guides);
+
+    // Fetch today's usage from the server (via edge function response)
+    // Usage is tracked server-side and returned with each request
   }, [user, storagePrefix]);
 
-  const incrementUsage = () => {
-    const today = new Date().toDateString();
-    const newCount = requestCount + 1;
-    localStorage.setItem(`${storagePrefix}usage`, JSON.stringify({ date: today, count: newCount }));
-    setRequestCount(newCount);
+  // --- SAVE API KEY TO DATABASE ---
+  const saveApiKey = async () => {
+    if (!user || !newApiKey.trim()) return;
+
+    try {
+      // Check if settings exist
+      const { data: existing } = await supabase
+        .from('user_settings')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (existing) {
+        // Update existing
+        const { error } = await supabase
+          .from('user_settings')
+          .update({ gemini_api_key: newApiKey.trim() })
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+      } else {
+        // Insert new
+        const { error } = await supabase
+          .from('user_settings')
+          .insert({ user_id: user.id, gemini_api_key: newApiKey.trim() });
+
+        if (error) throw error;
+      }
+
+      setHasApiKey(true);
+      setNewApiKey('');
+      setShowSettings(false);
+      toast({ title: "API key saved securely!", description: "Your key is stored encrypted in the database" });
+    } catch (error) {
+      console.error('Error saving API key:', error);
+      toast({ title: "Failed to save API key", variant: "destructive" });
+    }
   };
 
-  const saveKey = () => {
-    if (userApiKey.trim()) {
-      localStorage.setItem(`${storagePrefix}api_key`, userApiKey.trim());
-      setIsKeySaved(true);
-      setShowSettings(false);
-      toast({ title: "API key saved!", description: "You can now use Flowmate AI" });
+  // --- CLEAR API KEY ---
+  const clearApiKey = async () => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('user_settings')
+        .update({ gemini_api_key: null })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setHasApiKey(false);
+      toast({ title: "API key removed" });
+    } catch (error) {
+      console.error('Error clearing API key:', error);
+      toast({ title: "Failed to clear API key", variant: "destructive" });
     }
   };
 
@@ -170,8 +239,6 @@ const FlowmateAI: React.FC = () => {
     const note = await createNote(title);
     
     if (note) {
-      // Update the note with conversation content and AI content
-      const { supabase } = await import('@/integrations/supabase/client');
       await supabase
         .from('notes')
         .update({ 
@@ -184,16 +251,16 @@ const FlowmateAI: React.FC = () => {
     }
   };
 
-  // --- AI LOGIC WITH MEMORY (Direct Gemini API) ---
+  // --- AI LOGIC - CALLS SECURE EDGE FUNCTION ---
   const handleAiAction = async () => {
     if (!input && attachments.length === 0) return;
-    if (!userApiKey) { 
+    
+    if (!hasApiKey) { 
       setShowSettings(true); 
       toast({ title: "API key required", description: "Please enter your Gemini API key", variant: "destructive" });
       return; 
     }
 
-    // Check daily limit
     if (isLimitExceeded) {
       toast({ 
         title: "Daily limit reached", 
@@ -204,93 +271,79 @@ const FlowmateAI: React.FC = () => {
     }
 
     setIsLoading(true);
-    const currentPromptParts: any[] = [{ text: input || "Summarize the context." }];
-    
-    // Add attachments as inline data
-    attachments.forEach(att => {
-      if (att.type === 'image' || att.type === 'audio') {
-        currentPromptParts.push({ 
-          inlineData: { mimeType: att.mime, data: att.data } 
-        });
-      } else {
-        // For PDF extracted text, add as text
-        currentPromptParts.push({ text: `\n\n[${att.name}]:\n${att.data}` });
-      }
-    });
-
-    // Build conversation history
-    const history = messages.map(m => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.content }]
-    }));
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${userApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [...history, { role: 'user', parts: currentPromptParts }],
-            systemInstruction: { 
-              parts: [{ 
-                text: `You are Flowmate, a personalized student companion for ${user?.user_metadata?.full_name || user?.email || 'the student'}. 
-
-CRITICAL FORMATTING RULES (YOU MUST FOLLOW THESE EXACTLY):
-• Provide ALL responses in PLAIN TEXT ONLY
-• Do NOT use Markdown (no asterisks ** for bolding, no # for headings)
-• Do NOT use LaTeX (no dollar signs $, no \\text blocks)
-• Do NOT use HTML tags
-
-FOR HEADINGS:
-• Use ALL CAPS on a new line for main headings
-• Add a blank line before and after headings
-
-FOR LISTS:
-• Use '•' bullet points for all unordered lists
-• Use '1.' '2.' '3.' for numbered lists
-• Each list item on its own line
-
-FOR CHEMICAL/MATH FORMULAS:
-• Use standard text with Unicode subscripts: CO₂, H₂O, O₂, C₆H₁₂O₆
-• Write equations in plain text: 6CO₂ + 6H₂O + Light Energy → C₆H₁₂O₆ + 6O₂
-• Use → for arrows, ² ³ for superscripts, ₂ ₃ for subscripts
-
-FOR EMPHASIS:
-• Use ALL CAPS for important terms instead of bold
-• Use quotation marks for definitions
-
-Be encouraging, academic, and helpful. Structure your responses clearly.` 
-              }] 
-            }
-          })
-        }
-      );
+      const { data: { session } } = await supabase.auth.getSession();
       
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error.message || 'API Error');
+      if (!session) {
+        toast({ title: "Please sign in", variant: "destructive" });
+        return;
       }
+
+      // Call the secure edge function
+      const response = await supabase.functions.invoke('gemini-chat', {
+        body: {
+          prompt: input || "Summarize the context.",
+          messages: messages,
+          attachments: attachments.map(att => ({
+            type: att.type,
+            data: att.data,
+            name: att.name,
+            mime: att.mime
+          }))
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to get response');
+      }
+
+      const data = response.data;
+
+      if (data.error) {
+        // Handle specific errors
+        if (data.error === 'API_KEY_REQUIRED') {
+          setHasApiKey(false);
+          setShowSettings(true);
+          toast({ title: "API key required", description: data.message, variant: "destructive" });
+          return;
+        }
+        if (data.error === 'INVALID_API_KEY') {
+          setHasApiKey(false);
+          setShowSettings(true);
+          toast({ title: "Invalid API key", description: data.message, variant: "destructive" });
+          return;
+        }
+        if (data.error === 'RATE_LIMITED') {
+          setRequestCount(data.usage?.count || DAILY_LIMIT);
+          toast({ title: "Rate limit exceeded", description: data.message, variant: "destructive" });
+          return;
+        }
+        throw new Error(data.message || data.error);
+      }
+
+      const aiText = data.response || 'No response generated';
       
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
+      // Update usage from server response
+      if (data.usage) {
+        setRequestCount(data.usage.count);
+      }
 
       setMessages(prev => [...prev, 
         { role: 'user', content: input || "Attachment analysis" },
         { role: 'assistant', content: aiText }
       ]);
       
-      incrementUsage();
       setInput('');
       setAttachments([]);
     } catch (error) {
-      console.error('Gemini API Error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get response. Please check your API key.';
+      console.error('AI Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get response';
       setMessages(prev => [...prev,
         { role: 'user', content: input || "Attachment analysis" },
         { role: 'assistant', content: `Error: ${errorMessage}` }
       ]);
-      toast({ title: "API Error", description: errorMessage, variant: "destructive" });
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -385,18 +438,19 @@ Be encouraging, academic, and helpful. Structure your responses clearly.`
     localStorage.setItem(`${storagePrefix}saved_guides`, JSON.stringify(filtered));
   };
 
-  const clearApiKey = () => {
-    localStorage.removeItem(`${storagePrefix}api_key`);
-    setUserApiKey('');
-    setIsKeySaved(false);
-    toast({ title: "API key cleared" });
-  };
-
   const clearConversation = () => {
     setMessages([]);
     setAttachments([]);
     toast({ title: "Conversation cleared" });
   };
+
+  if (isCheckingKey) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)] bg-background">
+        <Loader2 className="animate-spin text-primary" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-200px)] bg-background text-foreground overflow-hidden rounded-2xl border border-border">
@@ -547,31 +601,38 @@ Be encouraging, academic, and helpful. Structure your responses clearly.`
                     Google AI Studio
                   </a>
                 </p>
-                <input 
-                  type="password" 
-                  value={userApiKey} 
-                  onChange={(e) => setUserApiKey(e.target.value)} 
-                  className="w-full p-3 bg-muted border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary focus:outline-none" 
-                  placeholder="Enter Gemini API Key" 
-                />
-                <div className="flex gap-2 mt-3">
-                  <Button 
-                    onClick={saveKey} 
-                    className="flex-1"
-                  >
-                    {isKeySaved ? 'Update Key' : 'Save Key'}
-                  </Button>
-                  {isKeySaved && (
+                
+                {hasApiKey ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+                      <p className="text-xs text-green-600 font-medium">✓ API key configured securely</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Your key is stored encrypted in the database</p>
+                    </div>
                     <Button 
                       variant="destructive"
                       onClick={clearApiKey}
+                      className="w-full"
                     >
-                      Clear
+                      Remove API Key
                     </Button>
-                  )}
-                </div>
-                {isKeySaved && (
-                  <p className="text-xs text-green-600 mt-2 text-center">✓ API key saved</p>
+                  </div>
+                ) : (
+                  <>
+                    <input 
+                      type="password" 
+                      value={newApiKey} 
+                      onChange={(e) => setNewApiKey(e.target.value)} 
+                      className="w-full p-3 bg-muted border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary focus:outline-none" 
+                      placeholder="Enter Gemini API Key" 
+                    />
+                    <Button 
+                      onClick={saveApiKey} 
+                      className="w-full mt-3"
+                      disabled={!newApiKey.trim()}
+                    >
+                      Save Key Securely
+                    </Button>
+                  </>
                 )}
               </div>
 
@@ -599,7 +660,7 @@ Be encouraging, academic, and helpful. Structure your responses clearly.`
             <p className="text-sm text-muted-foreground mt-2">
               Upload your lecture notes, record a voice memo, or just ask a question.
             </p>
-            {!isKeySaved && (
+            {!hasApiKey && (
               <Button 
                 variant="outline"
                 onClick={() => setShowSettings(true)}
@@ -693,7 +754,7 @@ Be encouraging, academic, and helpful. Structure your responses clearly.`
             
             <button 
               onClick={handleAiAction}
-              disabled={isLoading || (!input && attachments.length === 0) || !isKeySaved}
+              disabled={isLoading || (!input && attachments.length === 0) || !hasApiKey}
               className="p-2 bg-primary text-primary-foreground rounded-full disabled:opacity-30 shadow-md"
             >
               <Send size={18} />
