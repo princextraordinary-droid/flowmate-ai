@@ -10,7 +10,7 @@ import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 interface Message {
   role: 'user' | 'assistant';
