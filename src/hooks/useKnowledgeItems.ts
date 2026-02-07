@@ -136,18 +136,33 @@ export function useKnowledgeItems(noteId?: string) {
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage
+        // Use signed URL instead of public URL for security
+        // Signed URLs expire after 1 hour and require authentication
+        const { data: urlData, error: signedUrlError } = await supabase.storage
           .from('knowledge-files')
-          .getPublicUrl(fileName);
+          .createSignedUrl(fileName, 3600); // 1 hour expiry
 
-        // Update item with real URL
-        const updatedItem = { ...item, file_url: urlData.publicUrl };
+        if (signedUrlError) throw signedUrlError;
+
+        // Store the file path, not the signed URL (we'll generate fresh signed URLs on demand)
+        const updatedItem = { 
+          ...item, 
+          file_url: fileName, // Store the path, not the URL
+          metadata: { 
+            ...item.metadata, 
+            storagePath: fileName,
+            signedUrl: urlData?.signedUrl // Temporary URL for immediate use
+          }
+        };
         setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i));
         await offlineDb.put('knowledgeItems', updatedItem);
 
         await supabase
           .from('knowledge_items')
-          .update({ file_url: urlData.publicUrl })
+          .update({ 
+            file_url: fileName,
+            metadata: updatedItem.metadata
+          })
           .eq('id', item.id);
 
       } catch (error) {
@@ -176,12 +191,33 @@ export function useKnowledgeItems(noteId?: string) {
     }
   };
 
+  // Generate a fresh signed URL for a file (for secure viewing)
+  const getSignedUrl = async (storagePath: string): Promise<string | null> => {
+    if (!user || !storagePath) return null;
+    
+    // If it's a blob URL (offline), return as-is
+    if (storagePath.startsWith('blob:')) return storagePath;
+    
+    try {
+      const { data, error } = await supabase.storage
+        .from('knowledge-files')
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+      
+      if (error) throw error;
+      return data?.signedUrl || null;
+    } catch (error) {
+      console.error('Error generating signed URL:', error);
+      return null;
+    }
+  };
+
   return {
     items,
     loading,
     addItem,
     uploadFile,
     deleteItem,
+    getSignedUrl,
     reload: loadItems
   };
 }

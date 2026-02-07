@@ -1,14 +1,43 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.93.2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+// Allowed origins for CORS - restrict to actual application domains
+const ALLOWED_ORIGINS = [
+  'https://id-preview--8c676065-b53d-4a6a-aff5-b77a831a9405.lovable.app',
+  'https://lovable.dev',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+// Valid file types for input validation
+const VALID_FILE_TYPES = ['text', 'pdf', 'image', 'audio', 'html'];
+const MAX_PROMPT_LENGTH = 50000; // 50KB limit
+const MAX_OVERLAY_PROMPT_LENGTH = 2000; // 2KB limit
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Only allow POST method
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "Method not allowed" }),
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -44,11 +73,56 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, fileType, overlayPrompt } = await req.json();
+    // Parse and validate input
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { prompt, fileType, overlayPrompt } = requestBody;
+
+    // Validate prompt
+    if (typeof prompt !== 'string' || prompt.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Prompt is required and must be a string" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Prompt exceeds maximum length of ${MAX_PROMPT_LENGTH} characters` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate overlayPrompt if provided
+    if (overlayPrompt !== undefined && overlayPrompt !== null) {
+      if (typeof overlayPrompt !== 'string') {
+        return new Response(
+          JSON.stringify({ error: "Overlay prompt must be a string" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (overlayPrompt.length > MAX_OVERLAY_PROMPT_LENGTH) {
+        return new Response(
+          JSON.stringify({ error: `Overlay prompt exceeds maximum length of ${MAX_OVERLAY_PROMPT_LENGTH} characters` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Validate fileType if provided
+    const validatedFileType = fileType && VALID_FILE_TYPES.includes(fileType) ? fileType : 'text';
 
     // Build the prompt
     const systemPrompt = `You are a helpful AI assistant for a productivity app. 
-Analyze the provided ${fileType || 'text'} content and respond based on the user's instruction.
+Analyze the provided ${validatedFileType} content and respond based on the user's instruction.
 If asked for a diagram, include a mermaid.js code block.
 If asked for an image, describe what image should be generated.
 Be concise and actionable.`;
@@ -91,9 +165,9 @@ Be concise and actionable.`;
       }
       
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+      console.error("AI gateway error:", response.status);
       return new Response(
-        JSON.stringify({ error: "AI gateway error", details: errorText }),
+        JSON.stringify({ error: "AI service temporarily unavailable" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -172,9 +246,9 @@ Be concise and actionable.`;
     );
 
   } catch (error) {
-    console.error("Edge function error:", error);
+    console.error("Edge function error:", error instanceof Error ? error.message : "Unknown error");
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ error: "An unexpected error occurred" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
