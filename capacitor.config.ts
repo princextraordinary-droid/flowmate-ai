@@ -4,6 +4,9 @@ const config: CapacitorConfig = {
   appId: 'com.flowmate.ai',
   appName: 'flowmate',
   webDir: 'dist'
+  server: {
+    androidScheme: 'https'
+  }
 };
 
 export default config;

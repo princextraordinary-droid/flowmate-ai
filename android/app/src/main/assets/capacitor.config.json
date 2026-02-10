@@ -1,5 +1,8 @@
 {
 	"appId": "com.flowmate.ai",
 	"appName": "flowmate",
-	"webDir": "dist"
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
 }
