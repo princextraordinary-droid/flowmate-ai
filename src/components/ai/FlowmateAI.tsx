@@ -466,6 +466,11 @@ Be encouraging, academic, and helpful. Structure your responses clearly.`;
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+
+      // ADD THESE LINES:
+      mediaRecorderRef.current.stream.getTracks().forEach(track => {
+      track.stop();
+      });
       setIsRecording(false);
     }
   };

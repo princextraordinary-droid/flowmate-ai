@@ -26,7 +26,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onRecordingComplete, disa
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await .getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
       });
