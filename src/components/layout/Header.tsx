@@ -36,7 +36,7 @@ const Header: React.FC = () => {
       <div className="flex items-center gap-2 sm:gap-4">
         {/* Energy Level Bar */}
         <div className="text-right">
-          <p className="text-[8px] font-bold uppercase tracking-widest mb-1 sm:text-sm text-blue-700">
+          <p className="text-[8px] font-bold uppercase tracking-widest mb-1 sm:text-sm text-primary/70">
             <span className="hidden xs:inline">ENERGY: </span>{getEnergyLabel(energyLevel)}
           </p>
           <div className="flex justify-end gap-0.5 sm:gap-1">
