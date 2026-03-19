@@ -27,7 +27,7 @@ const Header: React.FC = () => {
   };
   return <header className="p-4 sm:p-6 md:p-8 flex justify-between items-center glass sticky top-0 z-40 border-b border-border/50">
       <div className="min-w-0 flex-1">
-        <h1 className="text-xl font-black tracking-tight leading-none text-blue-500 sm:text-3xl">Flowmate</h1>
+        <h1 className="text-xl font-black tracking-tight leading-none text-primary sm:text-3xl">Flowmate</h1>
         <p className="text-[8px] sm:text-[9px] font-bold text-muted-foreground uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1 sm:mt-1.5">
           PRODUCTIVITY COMPANION
         </p>
