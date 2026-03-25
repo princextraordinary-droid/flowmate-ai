@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { Play, Pause, Clock, CheckCircle2, RotateCcw, Trophy } from 'lucide-react';
 import { Task } from '@/types/task';
 import { useUserProgress } from '@/hooks/useUserProgress';
@@ -8,9 +9,10 @@ import XPBar from '@/components/xp/XPBar';
 
 interface FocusModeProps {
   selectedTask: Task | null;
+  onTick?: (timeLeft: string) => void; // Add this line
 }
 
-const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
+const FocusMode: React.FC<FocusModeProps> = ({ selectedTask, onTick }) => {
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [initialTime, setInitialTime] = useState(25 * 60);
@@ -28,43 +30,48 @@ const FocusMode: React.FC<FocusModeProps> = ({ selectedTask }) => {
     }
   }, [selectedTask]);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (timerActive && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (timeLeft === 0 && timerActive) {
-      setTimerActive(false);
-      handleTimerComplete();
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [timerActive, timeLeft]);
-
-  const handleTimerComplete = async () => {
-    if (selectedTask && selectedTask.status !== 'completed') {
-      // Award XP based on task energy
-      const { leveledUp, newLevel } = await addXP(selectedTask.energy);
-      
-      // Mark task as complete
-      await toggleTaskComplete(selectedTask.id);
-      
-      const xpGained = selectedTask.energy * getXPPerEnergy();
-      
-      if (leveledUp) {
-        toast({
-          title: `🎉 Level Up! You're now Level ${newLevel}!`,
-          description: `+${xpGained} XP earned from completing "${selectedTask.title}"`,
-        });
-      } else {
-        toast({
-          title: "Task Complete! 🎉",
-          description: `+${xpGained} XP earned`,
-        });
-      }
-    }
+ useEffect(() => {
+  let interval: NodeJS.Timeout | null = null;
+  if (timerActive && timeLeft > 0) {
+    interval = setInterval(() => {
+      setTimeLeft((t) => {
+        const newTime = t - 1;
+        
+        // Format MM:SS for the notification
+        const mins = Math.floor(newTime / 60);
+        const secs = newTime % 60;
+        const formatted = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        
+        // Send the update to the notification tray
+        if (onTick) onTick(formatted);
+        
+        return newTime;
+      });
+    }, 1000);
+  } else if (timeLeft === 0 && timerActive) {
+    setTimerActive(false);
+    handleTimerComplete();
+  }
+  return () => {
+    if (interval) clearInterval(interval);
   };
+}, [timerActive, timeLeft, onTick]);
+      
 
+const handleTimerComplete = async () => {
+  // 1. Send the final "Success" notification
+  await LocalNotifications.schedule({
+    notifications: [{
+      id: 2, // Different ID so it doesn't overwrite the active timer
+      title: "🎉 Session Complete!",
+      body: `Great job! You finished: ${selectedTask?.title || 'your task'}. Time for a break.`,
+      sound: 'beep.wav',
+    }]
+  });
+
+  // 2. Clear the ticking sticky notification (ID: 1)
+  await LocalNotifications.cancel({ notifications: [{ id: 1 }] });
+};
   const handleManualComplete = async () => {
     if (selectedTask && selectedTask.status !== 'completed') {
       const { leveledUp, newLevel } = await addXP(selectedTask.energy);

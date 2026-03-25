@@ -120,8 +120,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onTaskClick }) => {
         onReschedule={handleRescheduleMissedTask}
         onComplete={handleCompleteMissedTask}
       />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-2 pb-20">
         {Object.values(QUADRANTS).map(quadrant => (
           <QuadrantCard 
             key={quadrant.id} 

@@ -142,10 +142,15 @@
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv11", "ss01", "ss03";
-  }
+ body {
+  margin: 0;
+  background-color: #030712; /* Very dark slate */
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0, transparent 50%), 
+    radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0, transparent 50%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: white;
 }
 
 @layer utilities {
@@ -218,4 +223,4 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.3);
-}
+}}

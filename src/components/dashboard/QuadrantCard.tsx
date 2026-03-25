@@ -22,32 +22,35 @@ const QuadrantCard: React.FC<QuadrantCardProps> = ({
   const filteredTasks = tasks.filter(t => t.quadrant === quadrant.id);
 
   return (
-    <div className={`p-4 rounded-pill border-2 ${quadrant.bgClass} min-h-[180px] shadow-soft transition-all hover:shadow-md`}>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-xl drop-shadow-sm">{quadrant.icon}</span>
-        <h3 className={`font-bold uppercase text-[10px] tracking-widest ${quadrant.colorClass} opacity-80`}>
-          {quadrant.title}
-        </h3>
-        <span className="ml-auto bg-background/50 px-2 py-0.5 rounded-full text-[10px] font-bold text-muted-foreground">
+  <div className={`relative overflow-hidden p-5 rounded-[2rem] bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-500 hover:bg-white/10 hover:-translate-y-1 group min-h-[200px]`}>
+    {/* 2025 Glass Reflection */}
+    <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+    
+    <div className="relative z-10"> {/* Keeps content above the glass glow */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">{quadrant.icon}</span>
+          <h3 className="font-bold uppercase tracking-widest text-[11px] text-white/90">
+            {quadrant.title}
+          </h3>
+        </div>
+        <span className="bg-white/10 px-2.5 py-1 rounded-full text-[10px] font-bold backdrop-blur-md border border-white/5">
           {filteredTasks.length}
         </span>
       </div>
-      <div className="space-y-2">
-        {filteredTasks.map(task => (
-          <TaskCard 
-            key={task.id} 
-            task={task} 
-            onClick={() => onTaskClick(task)}
-            onToggleComplete={() => onToggleComplete(task.id)}
-            onEdit={() => onEditTask(task)}
-            onMoveToQuadrant={(quadrantId) => onMoveToQuadrant(task.id, quadrantId)}
-          />
-        ))}
-        {filteredTasks.length === 0 && (
-          <p className="text-xs text-muted-foreground italic opacity-60 text-center py-4">
-            No tasks here
-          </p>
-        )}
+
+     <div className="space-y-3">
+          {filteredTasks.map((task) => (
+            <TaskCard 
+              key={task.id} 
+              task={task} 
+              onClick={() => onTaskClick(task)}
+              onToggleComplete={() => onToggleComplete(task.id)}
+              onEdit={() => onEditTask(task)}
+              onMoveToQuadrant={(targetQuadrant) => onMoveToQuadrant(task.id, targetQuadrant)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
